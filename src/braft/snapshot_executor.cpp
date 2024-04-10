@@ -154,6 +154,7 @@ void SnapshotExecutor::do_snapshot(Closure* done) {
         LOG_IF(INFO, _node != NULL) << "node " << _node->node_id()
             << " the gap between fsm applied index " << saved_fsm_applied_index
             << " and last_snapshot_index " << saved_last_snapshot_index
+            << ", last_snapshot_term " << saved_last_snapshot_term 
             << " is less than " << FLAGS_raft_do_snapshot_min_index_gap
             << ", will clear bufferred logs and return success";
 

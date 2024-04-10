@@ -63,7 +63,7 @@ int FSMCaller::run(void* meta, bthread::TaskIterator<ApplyTask>& iter) {
         return 0;
     }
     int64_t max_committed_index = -1;
-    int64_t counter = 0;
+    size_t counter = 0;
     size_t  batch_size = FLAGS_raft_fsm_caller_commit_batch;
     for (; iter; ++iter) {
         if (iter->type == COMMITTED && counter < batch_size) {
