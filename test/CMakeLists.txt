@@ -1,11 +1,9 @@
 find_package(Gperftools)
+include(thirdparty/gtest/SetupGtest)
+
 include_directories(${GPERFTOOLS_INCLUDE_DIR})
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/test)
-
-find_path(GTEST_HEADER NAMES gtest/gtest.h)
-find_library(GTEST_LIB NAMES gtest)
-find_library(GTEST_MAIN_LIB NAMES gtest_main)
 
 set(CMAKE_CPP_FLAGS "-DGFLAGS_NS=${GFLAGS_NS}")
 set(CMAKE_CPP_FLAGS "${CMAKE_CPP_FLAGS} -D__const__=__unused__ -D_GNU_SOURCE -DUSE_SYMBOLIZE -DNO_TCMALLOC -D__STDC_FORMAT_MACROS -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DUNIT_TEST -g -Dprivate=public -Dprotected=public -D__STRICT_ANSI__ -include sstream_workaround.h")
@@ -27,11 +25,9 @@ foreach(BRAFT_UT ${TEST_BRAFT_SRCS})
     add_executable(${BRAFT_UT_WE} ${BRAFT_UT} 
                    $<TARGET_OBJECTS:OBJ_LIB>)
     target_link_libraries(${BRAFT_UT_WE}
-        #"-Xlinker \"-(\""
                           ${GTEST_MAIN_LIB}
                           ${GTEST_LIB}
                           ${GPERFTOOLS_LIBRARY}
                           ${DYNAMIC_LIB}
-                          #                  "-Xlinker \"-)\""
                           )
 endforeach()

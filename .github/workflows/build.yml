@@ -59,17 +59,12 @@ jobs:
         chmod a+x bazel-0.25.2-installer-linux-x86_64.sh
         ./bazel-0.25.2-installer-linux-x86_64.sh --user
         export PATH="$PATH:$HOME/bin"
-    - name: Install brpc
-      working-directory: ${{ github.workspace }}
-      if: ${{ matrix.build_tool == 'cmake' }}
-      run: |
-        mkdir -p thirdparty
-        git clone https://github.com/brpc/brpc.git thirdparty/brpc && cd thirdparty/brpc && mkdir -p bld && cd bld && cmake .. && make -j4 && sudo make install
     - name: Build with cmake
       if: ${{ matrix.build_tool == 'cmake' }}
       run: |
-        cmake -S "${{ github.workspace }}" -B "${{ env.CMAKE_BUILD_DIR }}" -DBUILD_UNIT_TESTS=ON
-        cmake --build "${{ env.CMAKE_BUILD_DIR }}"
+        cmake -S "${{ github.workspace }}" -B "${{ env.CMAKE_BUILD_DIR }}" -DWITH_TESTS=ON
+        cmake --build bld  --parallel 16 -- brpc-static
+        cmake --build "${{ env.CMAKE_BUILD_DIR }}" --parallel 16
     - name: Build with bazel
       if: ${{ matrix.build_tool == 'bazel' }}
       run: |

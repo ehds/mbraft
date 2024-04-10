@@ -3684,11 +3684,11 @@ TEST_P(NodeTest, readonly) {
     cluster.stop_all();
 }
 
-INSTANTIATE_TEST_CASE_P(NodeTestWithoutPipelineReplication,
+INSTANTIATE_TEST_SUITE_P(NodeTestWithoutPipelineReplication,
                         NodeTest,
                         ::testing::Values("NoReplcation"));
 
-INSTANTIATE_TEST_CASE_P(NodeTestWithPipelineReplication,
+INSTANTIATE_TEST_SUITE_P(NodeTestWithPipelineReplication,
                         NodeTest,
                         ::testing::Values("NoCache", "HasCache"));
 

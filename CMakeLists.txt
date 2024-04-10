@@ -9,6 +9,10 @@ INCLUDE(CPack)
 #option(EXAMPLE_LINK_SO "Whether examples are linked dynamically" OFF)
 option(BRPC_WITH_GLOG "With glog" OFF)
 option(WITH_DEBUG_SYMBOLS "With debug symbols" ON)
+# https://cmake.org/cmake/help/latest/policy/CMP0058.html
+# suppress this  CMP0058 warning
+cmake_policy(SET CMP0058 OLD)
+option(WITH_TESTS "Whether to build unit tests" OFF)
 
 set(WITH_GLOG_VAL "0")
 if(BRPC_WITH_GLOG)
@@ -23,6 +27,11 @@ set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
 
 include(FindThreads)
 include(FindProtobuf)
+include(thirdparty/brpc/SetupBrpc)
+
+if ((NOT BRPC_INCLUDE_PATH) OR (NOT BRPC_LIB))
+    message(FATAL_ERROR "Fail to find brpc")
+endif()
 
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # require at least gcc 4.8
@@ -64,12 +73,6 @@ endif()
 
 if(LEVELDB_WITH_SNAPPY)
     find_library(SNAPPY_LIB NAMES snappy)
-endif()
-
-find_path(BRPC_INCLUDE_PATH NAMES brpc/server.h)
-find_library(BRPC_LIB NAMES libbrpc.a brpc)
-if ((NOT BRPC_INCLUDE_PATH) OR (NOT BRPC_LIB))
-    message(FATAL_ERROR "Fail to find brpc")
 endif()
 
 if (NOT PROTOBUF_PROTOC_EXECUTABLE)
@@ -226,7 +229,7 @@ endmacro(use_cxx11)
 use_cxx11()
 
 add_subdirectory(src)
-if(BUILD_UNIT_TESTS)
+if(WITH_TESTS)
     add_subdirectory(test)
 endif()
 add_subdirectory(tools)
