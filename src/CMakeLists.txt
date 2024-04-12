@@ -12,6 +12,11 @@ include_directories(${CMAKE_SOURCE_DIR}/src)
 add_library(OBJ_LIB OBJECT ${SOURCES})
 
 set_property(TARGET ${OBJ_LIB} PROPERTY POSITION_INDEPENDENT_CODE 1)
+
+if(WITH_TESTS AND WITH_COVERAGE)
+    target_compile_options(OBJ_LIB PRIVATE -g -O0 --coverage -fprofile-arcs -ftest-coverage)
+endif()
+
 add_library(braft-shared SHARED $<TARGET_OBJECTS:OBJ_LIB>)
 add_library(braft-static STATIC $<TARGET_OBJECTS:OBJ_LIB>)
 target_link_libraries(braft-shared ${DYNAMIC_LIB})
