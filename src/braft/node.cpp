@@ -20,7 +20,9 @@
 #include <brpc/errno.pb.h>
 #include <brpc/controller.h>
 #include <brpc/channel.h>
+#include <optional>
 
+#include "braft/configuration.h"
 #include "braft/errno.pb.h"
 #include "braft/util.h"
 #include "braft/raft.h"
@@ -2068,9 +2070,9 @@ void NodeImpl::apply(LogEntryAndClosure tasks[], size_t size) {
         entries.push_back(tasks[i].entry);
         entries.back()->id.term = _current_term;
         entries.back()->type = ENTRY_TYPE_DATA;
-        _ballot_box->append_pending_task(_conf.conf,
-                                         _conf.stable() ? NULL : &_conf.old_conf,
-                                         tasks[i].done);
+        _ballot_box->append_pending_task(
+            _conf.conf, _conf.stable() ? nullptr : &_conf.old_conf,
+            tasks[i].done);
     }
     _log_manager->append_entries(&entries,
                                new LeaderStableClosure(
@@ -3480,7 +3482,7 @@ void NodeImpl::get_leader_lease_status(LeaderLeaseStatus* lease_status) {
 
 void NodeImpl::VoteBallotCtx::init(NodeImpl* node, bool triggered) {
     reset(node);
-    _ballot.init(node->_conf.conf, node->_conf.stable() ? NULL : &(node->_conf.old_conf));
+    _ballot.init(node->_conf.conf, std::optional<Configuration>() );
     _triggered = triggered;
 }
 
