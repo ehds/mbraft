@@ -13,6 +13,7 @@ option(WITH_DEBUG_SYMBOLS "With debug symbols" ON)
 # suppress this  CMP0058 warning
 cmake_policy(SET CMP0058 OLD)
 option(WITH_TESTS "Whether to build unit tests" OFF)
+option(WITH_COVERAGE "Whether build with coverage report" OFF)
 
 set(WITH_GLOG_VAL "0")
 if(BRPC_WITH_GLOG)
@@ -232,7 +233,7 @@ add_subdirectory(src)
 if(WITH_TESTS)
     add_subdirectory(test)
 endif()
-add_subdirectory(tools)
+# add_subdirectory(tools)
 
 file(COPY ${CMAKE_CURRENT_BINARY_DIR}/braft/
         DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/output/include/braft/

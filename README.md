@@ -1,4 +1,5 @@
-[![Build Status](https://travis-ci.org/baidu/braft.svg?branch=master)](https://travis-ci.org/baidu/braft)
+![build status](https://github.com/ehds/mbraft/actions/workflows/build.yml/badge.svg\?branch=main)
+[![codecov](https://codecov.io/gh/ehds/mbraft/graph/badge.svg?token=TCS003M7RA)](https://codecov.io/gh/ehds/mbraft)
 
 ---
 
@@ -47,7 +48,3 @@ It's widely used inside Baidu to build highly-available systems, such as:
   * [Paxos](./docs/cn/paxos_protocol.md)
   * [ZAB](./docs/cn/zab_protocol.md)
   * [QJM](./docs/cn/qjm.md)
-
-# Discussion
-
-* Add Weixin id ***zhengpf__87*** or ***xiongk_2049*** with a verification message '**braft**', then you will be invited into the discussion group. 
