@@ -3,14 +3,15 @@
 // Author: Zhangyi Chen (chenzhangyi01@baidu.com)
 // Date: 2016/02/23 16:22:15
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <gtest/gtest.h>
 #include <butil/fd_guard.h>
-#include <butil/time.h>
 #include <butil/logging.h>
+#include <butil/time.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include "common.h"
 
 class FsyncTest : public testing::Test {
 };

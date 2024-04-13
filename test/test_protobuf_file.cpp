@@ -3,7 +3,7 @@
  *
  *       Filename:  test_protobuf_file.cpp
  *
- *    Description:  
+ *    Description:
  *
  *        Version:  1.0
  *        Created:  2015/09/22 19:48:31
@@ -15,8 +15,8 @@
  *
  * =====================================================================================
  */
+#include "common.h"
 
-#include <gtest/gtest.h>
 #include "braft/local_storage.pb.h"
 #include "braft/protobuf_file.h"
 

@@ -1,8 +1,9 @@
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
 #include <butil/status.h>
+#include <gflags/gflags.h>
+
 #include "braft/raft.h"
 #include "braft/raft_meta.h"
+#include "common.h"
 
 namespace braft {
 extern void global_init_once_or_die();

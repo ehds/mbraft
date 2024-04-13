@@ -18,11 +18,13 @@
 #define PUBLIC_RAFT_TEST_UTIL_H
 
 #include <gflags/gflags.h>
-#include "braft/node.h"
+
 #include "braft/enum.pb.h"
 #include "braft/errno.pb.h"
-#include "braft/snapshot_throttle.h" 
+#include "braft/node.h"
 #include "braft/snapshot_executor.h"
+#include "braft/snapshot_throttle.h"
+#include "common.h"
 
 using namespace braft;
 bool g_dont_print_apply_log = false;

@@ -1,9 +1,11 @@
+#include <gflags/gflags.h>
+
+#include <vector>
+
+#include "../test/util.h"
 #include "braft/configuration.h"
 #include "braft/route_table.h"
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
-#include <vector>
-#include "../test/util.h"
+#include "common.h"
 
 class RouteTableTest : public testing::Test {
   void SetUp() {

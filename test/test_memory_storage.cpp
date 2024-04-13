@@ -3,8 +3,8 @@
 // Author: qinduohao@baidu.com
 // Date: 2017/05/23
 
-#include <gtest/gtest.h>
 #include "braft/memory_log.h"
+#include "common.h"
 
 namespace braft {
 extern void global_init_once_or_die();

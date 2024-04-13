@@ -16,10 +16,11 @@
  * =====================================================================================
  */
 
-#include <gtest/gtest.h>
-#include <butil/logging.h>
 #include <butil/iobuf.h>
+#include <butil/logging.h>
+
 #include "braft/log_entry.h"
+#include "common.h"
 
 class TestUsageSuits : public testing::Test {
 protected:

@@ -16,8 +16,8 @@
 
 #pragma once
 #include <algorithm>
-#include <vector>
 #include <optional>
+#include <vector>
 
 #include "braft/configuration.h"
 
@@ -32,12 +32,15 @@ class Ballot {
     };
 
     Ballot() : _quorum(0), _old_quorum(0){};
-    //FIXME(ehds): Remove optional.
-    // void init(const Configuration& conf, const Configuration& old_conf);
-    void init(const Configuration& conf, std::optional<const Configuration> old_conf);
+    // FIXME(ehds): Remove optional.
+    //  void init(const Configuration& conf, const Configuration& old_conf);
+    void init(const Configuration& conf,
+              std::optional<const Configuration> old_conf);
     PosHint grant(const PeerId& peer, PosHint hint);
     void grant(const PeerId& peer);
-    bool granted() const { return _quorum <= 0 && _old_quorum <= 0; }
+    bool granted() const { return quorum() <= 0 && old_quorum() <= 0; }
+    int quorum() const { return _quorum; }
+    int old_quorum() const { return _old_quorum; }
 
    private:
     struct UnfoundPeerId {

@@ -3,12 +3,14 @@
 // Author: Zhangyi Chen (chenzhangyi01@baidu.com)
 // Date: 2016/02/03 15:59:18
 
-#include <algorithm>
-#include <gtest/gtest.h>
 #include <butil/string_printf.h>
+
+#include <algorithm>
+
 #include "braft/ballot_box.h"
 #include "braft/configuration.h"
 #include "braft/fsm_caller.h"
+#include "common.h"
 
 class BallotBoxTest : public testing::Test {
 protected:

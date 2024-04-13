@@ -4,17 +4,18 @@
 // Author: WangYao (fisherman), wangyao02@baidu.com
 // Date: 2015/10/08 17:00:05
 
-#include <gtest/gtest.h>
-#include <gflags/gflags.h>
-#include <butil/logging.h>
-#include <butil/file_util.h>
-#include <errno.h>
 #include <brpc/server.h>
-#include "braft/snapshot.h"
-#include "braft/raft.h"
-#include "braft/util.h"
+#include <butil/file_util.h>
+#include <butil/logging.h>
+#include <errno.h>
+#include <gflags/gflags.h>
+
 #include "braft/local_file_meta.pb.h"
+#include "braft/raft.h"
+#include "braft/snapshot.h"
 #include "braft/snapshot_throttle.h"
+#include "braft/util.h"
+#include "common.h"
 #include "memory_file_system_adaptor.h"
 
 namespace logging {

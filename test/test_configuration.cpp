@@ -16,10 +16,11 @@
  * =====================================================================================
  */
 
-#include <gtest/gtest.h>
 #include <butil/logging.h>
-#include "braft/raft.h"
+
 #include "braft/configuration_manager.h"
+#include "braft/raft.h"
+#include "common.h"
 
 class TestUsageSuits : public testing::Test {
 protected:

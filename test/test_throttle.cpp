@@ -4,11 +4,12 @@
 // Author: Xiong Kai (xiongkai@baidu.com)
 // Date: 2017/09/07 14:06:13
 
-#include <gtest/gtest.h>
 #include <butil/logging.h>
+
 #include "braft/raft.h"
-#include "braft/util.h"
 #include "braft/snapshot_throttle.h"
+#include "braft/util.h"
+#include "common.h"
 
 class TestUsageSuits : public testing::Test {
 protected:

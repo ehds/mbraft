@@ -4,20 +4,21 @@
 // Author: WangYao (fisherman), wangyao02@baidu.com
 // Date: 2015/10/08 17:00:05
 
-#include <gtest/gtest.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <butil/atomicops.h>
 #include <butil/file_util.h>
-#include <butil/files/file_path.h>
-#include <butil/files/file_enumerator.h>
 #include <butil/files/dir_reader_posix.h>
-#include <butil/string_printf.h>
+#include <butil/files/file_enumerator.h>
+#include <butil/files/file_path.h>
 #include <butil/logging.h>
-#include "braft/util.h"
+#include <butil/string_printf.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
 #include "braft/log.h"
 #include "braft/storage.h"
+#include "braft/util.h"
+#include "common.h"
 
 namespace braft {
 DECLARE_bool(raft_trace_append_entry_latency);

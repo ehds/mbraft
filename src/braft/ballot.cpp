@@ -27,13 +27,13 @@ void Ballot::init(const Configuration& conf, std::optional<const Configuration> 
     _quorum = 0;
     _old_quorum = 0;
 
-    CHECK_LE(conf.size(), 0);
+    CHECK_GT(conf.size(), 0);
     _peers.reserve(conf.size());
     for (auto iter = conf.begin(); iter != conf.end(); ++iter) {
         _peers.push_back(*iter);
     }
     _quorum = _peers.size() / 2 + 1;
-    if (old_conf.has_value()) {
+    if (!old_conf.has_value()) {
         return;
     }
     _old_peers.reserve(old_conf->size());

@@ -14,12 +14,13 @@
 
 // Authors: Pengfei Zheng (zhengpengfei@baidu.com)
 
-#include <gtest/gtest.h>
 #include <butil/logging.h>
-#include "braft/util.h"
-#include "braft/node.h"
-#include "braft/lease.h"
+
 #include "../test/util.h"
+#include "braft/lease.h"
+#include "braft/node.h"
+#include "braft/util.h"
+#include "common.h"
 
 namespace braft {
 DECLARE_bool(raft_enable_leader_lease);
