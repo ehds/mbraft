@@ -3,9 +3,10 @@
 // Author: Zhangyi Chen (chenzhangyi01@baidu.com)
 // Date: 2016/04/11 12:15:37
 
-#include <gtest/gtest.h>
 #include <braft/util.h>
 #include <butil/crc32c.h>
+
+#include "common.h"
 
 class ChecksumTest : public testing::Test {
 protected:

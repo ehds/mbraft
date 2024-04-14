@@ -3,7 +3,8 @@
 // Author: Zhangyi Chen (chenzhangyi01@baidu.com)
 // Date: 2016/03/29 10:35:06
 
-#include <gtest/gtest.h>
+#include <common.h>
+
 #include "braft/storage.h"
 
 namespace braft {

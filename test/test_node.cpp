@@ -4,22 +4,24 @@
 // Author: WangYao (fisherman), wangyao02@baidu.com
 // Date: 2015/10/08 17:00:05
 
-#include <algorithm>
-#include <gflags/gflags.h>
-#include <gtest/gtest.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <braft/sync_point.h>
-#include <butil/logging.h>
-#include <butil/files/file_path.h>
-#include <butil/file_util.h>
-#include <butil/fast_rand.h>
 #include <brpc/closure_guard.h>
 #include <bthread/bthread.h>
 #include <bthread/countdown_event.h>
+#include <butil/fast_rand.h>
+#include <butil/file_util.h>
+#include <butil/files/file_path.h>
+#include <butil/logging.h>
+#include <fcntl.h>
+#include <gflags/gflags.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+
+#include <algorithm>
 #include <vector>
+
 #include "../test/util.h"
+#include "common.h"
 
 namespace braft {
 extern bvar::Adder<int64_t> g_num_nodes;

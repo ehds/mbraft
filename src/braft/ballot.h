@@ -1,11 +1,11 @@
 // Copyright (c) 2018 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,63 +14,57 @@
 
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
-#ifndef  BRAFT_BALLOT_H
-#define  BRAFT_BALLOT_H
+#pragma once
+#include <algorithm>
+#include <optional>
+#include <vector>
 
 #include "braft/configuration.h"
 
 namespace braft {
 
 class Ballot {
-public:
+   public:
     struct PosHint {
-        PosHint() : pos0(-1), pos1(-1) {}
-        int pos0;
-        int pos1;
+        PosHint() : pos0(0), pos1(0) {}
+        size_t pos0;
+        size_t pos1;
     };
 
-    Ballot();
-    ~Ballot();
-    void swap(Ballot& rhs) {
-        _peers.swap(rhs._peers);
-        std::swap(_quorum, rhs._quorum);
-        _old_peers.swap(rhs._old_peers);
-        std::swap(_old_quorum, rhs._old_quorum);
-    }
-
-    void init(const Configuration& conf, const Configuration* old_conf);
+    Ballot() : _quorum(0), _old_quorum(0){};
+    // FIXME(ehds): Remove optional.
+    //  void init(const Configuration& conf, const Configuration& old_conf);
+    void init(const Configuration& conf,
+              std::optional<const Configuration> old_conf);
     PosHint grant(const PeerId& peer, PosHint hint);
     void grant(const PeerId& peer);
-    bool granted() const { return _quorum <= 0 && _old_quorum <= 0; }
-private:
+    bool granted() const { return quorum() <= 0 && old_quorum() <= 0; }
+    int quorum() const { return _quorum; }
+    int old_quorum() const { return _old_quorum; }
+
+   private:
     struct UnfoundPeerId {
         UnfoundPeerId(const PeerId& peer_id) : peer_id(peer_id), found(false) {}
         PeerId peer_id;
         bool found;
-        bool operator==(const PeerId& id) const {
-            return peer_id == id;
-        }
+        bool operator==(const PeerId& id) const { return peer_id == id; }
     };
-    std::vector<UnfoundPeerId>::iterator find_peer(
-            const PeerId& peer, std::vector<UnfoundPeerId>& peers, int pos_hint) {
-        if (pos_hint < 0 || pos_hint >= (int)peers.size()
-                || peers[pos_hint].peer_id != peer) {
-            for (std::vector<UnfoundPeerId>::iterator
-                    iter = peers.begin(); iter != peers.end(); ++iter) {
-                if (*iter == peer) {
-                    return iter;
-                }
-            }
-            return peers.end();
+
+    using UnfoundPeerIds = std::vector<UnfoundPeerId>;
+    using UnfoundPeerIter = UnfoundPeerIds::iterator;
+
+    static UnfoundPeerIter find_peer(const PeerId& peer, UnfoundPeerIds& peers,
+                                     size_t pos_hint) {
+        if (pos_hint >= peers.size() || peers[pos_hint].peer_id != peer) {
+            return std::find(peers.begin(), peers.end(), peer);
         }
         return peers.begin() + pos_hint;
     }
-    std::vector<UnfoundPeerId> _peers;
+
+    UnfoundPeerIds _peers;
     int _quorum;
-    std::vector<UnfoundPeerId> _old_peers;
+    UnfoundPeerIds _old_peers;
     int _old_quorum;
 };
 
-};
-
-#endif  //BRAFT_BALLOT_H
+};  // namespace braft

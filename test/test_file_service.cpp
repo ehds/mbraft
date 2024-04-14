@@ -3,16 +3,16 @@
 // Author: Zhangyi Chen (chenzhangyi01@baidu.com)
 // Date: 2015/11/06 15:40:45
 
-#include <gtest/gtest.h>
-#include <gflags/gflags.h>
-#include <butil/logging.h>
-#include <butil/file_util.h>
-
 #include <brpc/server.h>
+#include <butil/file_util.h>
+#include <butil/logging.h>
+#include <gflags/gflags.h>
+
 #include "braft/file_service.h"
-#include "braft/util.h"
-#include "braft/remote_file_copier.h"
 #include "braft/file_system_adaptor.h"
+#include "braft/remote_file_copier.h"
+#include "braft/util.h"
+#include "common.h"
 
 namespace braft {
 DECLARE_bool(raft_file_check_hole);

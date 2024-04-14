@@ -3,13 +3,14 @@
 // Author: Zhangyi Chen (chenzhangyi01@baidu.com)
 // Date: 2016/07/27 20:13:42
 
-#include <gtest/gtest.h>
-#include <butil/atomicops.h>
 #include <brpc/server.h>
-#include "braft/snapshot_executor.h"
+#include <butil/atomicops.h>
+
 #include "braft/fsm_caller.h"
-#include "braft/util.h"
 #include "braft/raft.h"
+#include "braft/snapshot_executor.h"
+#include "braft/util.h"
+#include "common.h"
 
 namespace braft {
 

@@ -3,13 +3,14 @@
 // Author: Zhangyi Chen (chenzhangyi01@baidu.com)
 // Date: 2018/01/12 12:56:17
 
-#include <gtest/gtest.h>
-#include <gflags/gflags.h>
-#include <butil/unique_ptr.h>
 #include <brpc/server.h>
-#include "braft/raft.h"
+#include <butil/unique_ptr.h>
+#include <gflags/gflags.h>
+
 #include "braft/cli.h"
 #include "braft/node.h"
+#include "braft/raft.h"
+#include "common.h"
 
 class CliTest : public testing::Test {
 public:

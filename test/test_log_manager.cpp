@@ -3,16 +3,15 @@
 // Author: Zhangyi Chen (chenzhangyi01@baidu.com)
 // Date: 2015/11/24 16:30:49
 
-#include <gtest/gtest.h>
-
+#include <bthread/countdown_event.h>
+#include <butil/macros.h>
 #include <butil/memory/scoped_ptr.h>
 #include <butil/string_printf.h>
-#include <butil/macros.h>
 
-#include <bthread/countdown_event.h>
-#include "braft/log_manager.h"
 #include "braft/configuration.h"
 #include "braft/log.h"
+#include "braft/log_manager.h"
+#include "common.h"
 
 class LogManagerTest : public testing::Test {
 protected:

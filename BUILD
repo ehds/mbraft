@@ -33,7 +33,7 @@ cc_library(
         "-Woverloaded-virtual",
         "-Wnon-virtual-dtor",
         "-Wno-missing-field-initializers",
-        "-std=c++11",
+        "-std=c++17",
         "-DGFLAGS_NS=google",
     ],
     linkopts = [

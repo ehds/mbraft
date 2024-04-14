@@ -3,14 +3,15 @@
 // Author: Zhangyi Chen (chenzhangyi01@baidu.com)
 // Date: 2015/12/01 17:03:46
 
-#include <gtest/gtest.h>
-#include <butil/string_printf.h>
 #include <butil/memory/scoped_ptr.h>
-#include "braft/fsm_caller.h"
-#include "braft/raft.h"
-#include "braft/log.h"
+#include <butil/string_printf.h>
+
 #include "braft/configuration.h"
+#include "braft/fsm_caller.h"
+#include "braft/log.h"
 #include "braft/log_manager.h"
+#include "braft/raft.h"
+#include "common.h"
 
 class FSMCallerTest : public testing::Test {
 protected:

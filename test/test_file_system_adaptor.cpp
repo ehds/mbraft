@@ -4,8 +4,8 @@
 // Author: ZhengPengFei (zhengpengfei@baidu.com)
 // Date: 2017/06/16 10:29:05
 
-#include <gtest/gtest.h>
 #include "braft/file_system_adaptor.h"
+#include "common.h"
 
 class TestFileSystemAdaptorSuits : public testing::Test {
 protected:

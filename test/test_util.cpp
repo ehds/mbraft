@@ -4,14 +4,14 @@
 // Author: WangYao (fisherman), wangyao02@baidu.com
 // Date: 2015/10/08 17:00:05
 
-#include <gtest/gtest.h>
-#include <butil/logging.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
 #include <butil/files/scoped_temp_dir.h>
+#include <butil/logging.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "braft/util.h"
+#include "common.h"
 
 class TestUsageSuits : public testing::Test {
 protected:

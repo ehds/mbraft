@@ -14,8 +14,10 @@
 
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
-#include <gtest/gtest.h>
+#include <optional>
+
 #include "braft/ballot.h"
+#include "common.h"
 
 class BallotTest : public testing::Test {};
 
@@ -29,17 +31,17 @@ TEST(BallotTest, sanity) {
     conf.add_peer(peer2);
     conf.add_peer(peer3);
     braft::Ballot bl;
-    bl.init(conf, NULL);
-    ASSERT_EQ(2, bl._quorum);
-    ASSERT_EQ(0, bl._old_quorum);
+    bl.init(conf, std::nullopt);
+    ASSERT_EQ(2, bl.quorum());
+    ASSERT_EQ(0, bl.old_quorum());
     bl.grant(peer1);
-    ASSERT_EQ(1, bl._quorum);
+    ASSERT_EQ(1, bl.quorum());
     braft::Ballot::PosHint hint = bl.grant(peer1, braft::Ballot::PosHint());
-    ASSERT_EQ(1, bl._quorum);
+    ASSERT_EQ(1, bl.quorum());
     hint = bl.grant(peer1, hint);
-    ASSERT_EQ(1, bl._quorum);
+    ASSERT_EQ(1, bl.quorum());
     hint = bl.grant(peer4, hint);
-    ASSERT_EQ(1, bl._quorum);
+    ASSERT_EQ(1, bl.quorum());
     hint = bl.grant(peer2, hint);
     ASSERT_TRUE(bl.granted());
 }
@@ -54,27 +56,27 @@ TEST(BallotTest, joint_consensus_same_conf) {
     conf.add_peer(peer2);
     conf.add_peer(peer3);
     braft::Ballot bl;
-    bl.init(conf, &conf);
-    ASSERT_EQ(2, bl._quorum);
-    ASSERT_EQ(2, bl._old_quorum);
+    bl.init(conf, conf);
+    ASSERT_EQ(2, bl.quorum());
+    ASSERT_EQ(2, bl.old_quorum());
     bl.grant(peer1);
-    ASSERT_EQ(1, bl._quorum);
-    ASSERT_EQ(1, bl._old_quorum);
+    ASSERT_EQ(1, bl.quorum());
+    ASSERT_EQ(1, bl.old_quorum());
     braft::Ballot::PosHint hint = bl.grant(peer1, braft::Ballot::PosHint());
-    ASSERT_EQ(1, bl._quorum);
-    ASSERT_EQ(1, bl._old_quorum);
+    ASSERT_EQ(1, bl.quorum());
+    ASSERT_EQ(1, bl.old_quorum());
     hint = bl.grant(peer1, hint);
-    ASSERT_EQ(1, bl._quorum);
-    ASSERT_EQ(1, bl._old_quorum);
+    ASSERT_EQ(1, bl.quorum());
+    ASSERT_EQ(1, bl.old_quorum());
     hint = bl.grant(peer4, hint);
-    ASSERT_EQ(1, bl._quorum);
-    ASSERT_EQ(1, bl._old_quorum);
+    ASSERT_EQ(1, bl.quorum());
+    ASSERT_EQ(1, bl.old_quorum());
     ASSERT_FALSE(bl.granted());
     hint = bl.grant(peer2, hint);
     ASSERT_TRUE(bl.granted());
     hint = bl.grant(peer3, hint);
-    ASSERT_EQ(-1, bl._quorum);
-    ASSERT_EQ(-1, bl._old_quorum);
+    ASSERT_EQ(-1, bl.quorum());
+    ASSERT_EQ(-1, bl.old_quorum());
 }
 
 TEST(BallotTest, joint_consensus_different_conf) {
@@ -92,12 +94,12 @@ TEST(BallotTest, joint_consensus_different_conf) {
     conf2.add_peer(peer3);
     conf2.add_peer(peer4);
     braft::Ballot bl;
-    bl.init(conf, &conf2);
+    bl.init(conf, conf2);
     bl.grant(peer1);
     bl.grant(peer2);
     ASSERT_FALSE(bl.granted());
-    ASSERT_EQ(0, bl._quorum);
-    ASSERT_EQ(1, bl._old_quorum);
+    ASSERT_EQ(0, bl.quorum());
+    ASSERT_EQ(1, bl.old_quorum());
     bl.grant(peer4);
     ASSERT_TRUE(bl.granted());
 }

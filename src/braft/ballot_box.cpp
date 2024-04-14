@@ -17,6 +17,8 @@
 #include <butil/scoped_lock.h>
 #include <bvar/latency_recorder.h>
 #include <bthread/unstable.h>
+#include <cstddef>
+#include <optional>
 #include "braft/ballot_box.h"
 #include "braft/util.h"
 #include "braft/fsm_caller.h"
@@ -121,12 +123,12 @@ int BallotBox::reset_pending_index(int64_t new_pending_index) {
 int BallotBox::append_pending_task(const Configuration& conf, const Configuration* old_conf,
                                    Closure* closure) {
     Ballot bl;
-    bl.init(conf, old_conf);
+    bl.init(conf,
+            old_conf == nullptr ? std::nullopt : std::make_optional(*old_conf));
 
     BAIDU_SCOPED_LOCK(_mutex);
     CHECK(_pending_index > 0);
-    _pending_meta_queue.push_back(Ballot());
-    _pending_meta_queue.back().swap(bl);
+    _pending_meta_queue.push_back(std::move(bl));
     _closure_queue->append_pending_closure(closure);
     return 0;
 }
