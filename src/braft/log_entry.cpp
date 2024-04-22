@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,13 +15,14 @@
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
 #include "braft/log_entry.h"
+
 #include "braft/local_storage.pb.h"
 
 namespace braft {
 
 bvar::Adder<int64_t> g_nentries("raft_num_log_entries");
 
-LogEntry::LogEntry(): type(ENTRY_TYPE_UNKNOWN), peers(NULL), old_peers(NULL) {
+LogEntry::LogEntry() : type(ENTRY_TYPE_UNKNOWN), peers(NULL), old_peers(NULL) {
     g_nentries << 1;
 }
 
@@ -31,7 +32,8 @@ LogEntry::~LogEntry() {
     delete old_peers;
 }
 
-butil::Status parse_configuration_meta(const butil::IOBuf& data, LogEntry* entry) {
+butil::Status parse_configuration_meta(const butil::IOBuf& data,
+                                       LogEntry* entry) {
     butil::Status status;
     ConfigurationPBMeta meta;
     butil::IOBufAsZeroCopyInputStream wrapper(data);
@@ -49,10 +51,11 @@ butil::Status parse_configuration_meta(const butil::IOBuf& data, LogEntry* entry
             entry->old_peers->push_back(PeerId(meta.old_peers(i)));
         }
     }
-    return status;    
+    return status;
 }
 
-butil::Status serialize_configuration_meta(const LogEntry* entry, butil::IOBuf& data) {
+butil::Status serialize_configuration_meta(const LogEntry* entry,
+                                           butil::IOBuf& data) {
     butil::Status status;
     ConfigurationPBMeta meta;
     for (size_t i = 0; i < entry->peers->size(); ++i) {
@@ -70,4 +73,4 @@ butil::Status serialize_configuration_meta(const LogEntry* entry, butil::IOBuf& 
     return status;
 }
 
-}
+}  // namespace braft

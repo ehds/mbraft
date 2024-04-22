@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -21,27 +21,28 @@
 #define BRAFT_RAFT_SNAPSHOT_H
 
 #include <string>
-#include "braft/storage.h"
-#include "braft/macros.h"
-#include "braft/local_file_meta.pb.h"
+
 #include "braft/file_system_adaptor.h"
+#include "braft/local_file_meta.pb.h"
+#include "braft/macros.h"
 #include "braft/remote_file_copier.h"
 #include "braft/snapshot_throttle.h"
+#include "braft/storage.h"
 
 namespace braft {
 
 class LocalSnapshotMetaTable {
-public:
+   public:
     LocalSnapshotMetaTable();
     ~LocalSnapshotMetaTable();
     // Add file to the meta
-    int add_file(const std::string& filename, 
-                 const LocalFileMeta& file_meta);
+    int add_file(const std::string& filename, const LocalFileMeta& file_meta);
     int remove_file(const std::string& filename);
     int save_to_file(FileSystemAdaptor* fs, const std::string& path) const;
     int load_from_file(FileSystemAdaptor* fs, const std::string& path);
-    int get_file_meta(const std::string& filename, LocalFileMeta* file_meta) const;
-    void list_files(std::vector<std::string> *files) const;
+    int get_file_meta(const std::string& filename,
+                      LocalFileMeta* file_meta) const;
+    void list_files(std::vector<std::string>* files) const;
     bool has_meta() { return _meta.IsInitialized(); }
     const SnapshotMeta& meta() { return _meta; }
     void set_meta(const SnapshotMeta& meta) { _meta = meta; }
@@ -51,16 +52,18 @@ public:
         _file_map.swap(rhs._file_map);
         _meta.Swap(&rhs._meta);
     }
-private:
+
+   private:
     // Intentionally copyable
     typedef std::map<std::string, LocalFileMeta> Map;
-    Map    _file_map;
+    Map _file_map;
     SnapshotMeta _meta;
 };
 
 class LocalSnapshotWriter : public SnapshotWriter {
-friend class LocalSnapshotStorage;
-public:
+    friend class LocalSnapshotStorage;
+
+   public:
     int64_t snapshot_index();
     virtual int init();
     virtual int save_meta(const SnapshotMeta& meta);
@@ -68,24 +71,24 @@ public:
     // Add file to the snapshot. It would fail it the file doesn't exist nor
     // references to any other file.
     // Returns 0 on success, -1 otherwise.
-    virtual int add_file(const std::string& filename, 
+    virtual int add_file(const std::string& filename,
                          const ::google::protobuf::Message* file_meta);
     // Remove a file from the snapshot, it doesn't guarantees that the real file
     // would be removed from the storage.
     virtual int remove_file(const std::string& filename);
     // List all the existing files in the Snapshot currently
-    virtual void list_files(std::vector<std::string> *files);
+    virtual void list_files(std::vector<std::string>* files);
 
     // Get the implementation-defined file_meta
-    virtual int get_file_meta(const std::string& filename, 
+    virtual int get_file_meta(const std::string& filename,
                               ::google::protobuf::Message* file_meta);
     // Sync meta table to disk
     int sync();
     FileSystemAdaptor* file_system() { return _fs.get(); }
-private:
+
+   private:
     // Users shouldn't create LocalSnapshotWriter Directly
-    LocalSnapshotWriter(const std::string& path, 
-                        FileSystemAdaptor* fs);
+    LocalSnapshotWriter(const std::string& path, FileSystemAdaptor* fs);
     virtual ~LocalSnapshotWriter();
 
     std::string _path;
@@ -93,9 +96,10 @@ private:
     scoped_refptr<FileSystemAdaptor> _fs;
 };
 
-class LocalSnapshotReader: public SnapshotReader {
-friend class LocalSnapshotStorage;
-public:
+class LocalSnapshotReader : public SnapshotReader {
+    friend class LocalSnapshotStorage;
+
+   public:
     int64_t snapshot_index();
     virtual int init();
     virtual int load_meta(SnapshotMeta* meta);
@@ -105,15 +109,15 @@ public:
     // Return an empty string if some error has occcured
     virtual std::string generate_uri_for_copy();
     // List all the existing files in the Snapshot currently
-    virtual void list_files(std::vector<std::string> *files);
+    virtual void list_files(std::vector<std::string>* files);
 
     // Get the implementation-defined file_meta
-    virtual int get_file_meta(const std::string& filename, 
+    virtual int get_file_meta(const std::string& filename,
                               ::google::protobuf::Message* file_meta);
-private:
+
+   private:
     // Users shouldn't create LocalSnapshotReader Directly
-    LocalSnapshotReader(const std::string& path,
-                        butil::EndPoint server_addr,
+    LocalSnapshotReader(const std::string& path, butil::EndPoint server_addr,
                         FileSystemAdaptor* fs,
                         SnapshotThrottle* snapshot_throttle);
     virtual ~LocalSnapshotReader();
@@ -129,23 +133,26 @@ private:
 
 // Describe the Snapshot on another machine
 class LocalSnapshot : public Snapshot {
-friend class LocalSnapshotCopier;
-public:
+    friend class LocalSnapshotCopier;
+
+   public:
     // Get the path of the Snapshot
     virtual std::string get_path();
     // List all the existing files in the Snapshot currently
-    virtual void list_files(std::vector<std::string> *files);
+    virtual void list_files(std::vector<std::string>* files);
     // Get the implementation-defined file_meta
-    virtual int get_file_meta(const std::string& filename, 
+    virtual int get_file_meta(const std::string& filename,
                               ::google::protobuf::Message* file_meta);
-private:
+
+   private:
     LocalSnapshotMetaTable _meta_table;
 };
 
 class LocalSnapshotStorage;
 class LocalSnapshotCopier : public SnapshotCopier {
-friend class LocalSnapshotStorage;
-public:
+    friend class LocalSnapshotStorage;
+
+   public:
     LocalSnapshotCopier();
     LocalSnapshotCopier(bool copy_file);
     ~LocalSnapshotCopier();
@@ -153,12 +160,13 @@ public:
     virtual void join();
     virtual SnapshotReader* get_reader() { return _reader; }
     int init(const std::string& uri);
-private:
+
+   private:
     static void* start_copy(void* arg);
     void start();
     void copy();
     void load_meta_table();
-    int filter_before_copy(LocalSnapshotWriter* writer, 
+    int filter_before_copy(LocalSnapshotWriter* writer,
                            SnapshotReader* last_snapshot);
     void filter();
     void copy_file(const std::string& filename);
@@ -179,10 +187,11 @@ private:
 };
 
 class LocalSnapshotStorage : public SnapshotStorage {
-friend class LocalSnapshotCopier;
-public:
+    friend class LocalSnapshotCopier;
+
+   public:
     explicit LocalSnapshotStorage(const std::string& path);
-                         
+
     LocalSnapshotStorage() {}
     virtual ~LocalSnapshotStorage();
 
@@ -194,7 +203,8 @@ public:
 
     virtual SnapshotReader* open() WARN_UNUSED_RESULT;
     virtual int close(SnapshotReader* reader);
-    virtual SnapshotReader* copy_from(const std::string& uri) WARN_UNUSED_RESULT;
+    virtual SnapshotReader* copy_from(const std::string& uri)
+        WARN_UNUSED_RESULT;
     virtual SnapshotCopier* start_to_copy_from(const std::string& uri);
     virtual int close(SnapshotCopier* copier);
     virtual int set_filter_before_copy_remote();
@@ -203,11 +213,12 @@ public:
 
     SnapshotStorage* new_instance(const std::string& uri) const;
     butil::Status gc_instance(const std::string& uri) const;
-    
+
     void set_server_addr(butil::EndPoint server_addr) { _addr = server_addr; }
     bool has_server_addr() { return _addr != butil::EndPoint(); }
     void set_copy_file(bool copy_file) { _copy_file = copy_file; }
-private:
+
+   private:
     SnapshotWriter* create(bool from_empty) WARN_UNUSED_RESULT;
     int destroy_snapshot(const std::string& path);
     int close(SnapshotWriter* writer, bool keep_data_on_error);
@@ -227,4 +238,4 @@ private:
 
 }  //  namespace braft
 
-#endif //~BRAFT_RAFT_SNAPSHOT_H
+#endif  //~BRAFT_RAFT_SNAPSHOT_H

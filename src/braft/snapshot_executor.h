@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,18 +14,18 @@
 
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
-#ifndef  BRAFT_SNAPSHOT_EXECUTOR_H
-#define  BRAFT_SNAPSHOT_EXECUTOR_H
+#ifndef BRAFT_SNAPSHOT_EXECUTOR_H
+#define BRAFT_SNAPSHOT_EXECUTOR_H
 
 #include <brpc/controller.h>
 
-#include "braft/raft.h"
-#include "braft/util.h"
-#include "braft/snapshot.h"
-#include "braft/storage.h"
-#include "braft/raft.pb.h"
 #include "braft/fsm_caller.h"
 #include "braft/log_manager.h"
+#include "braft/raft.h"
+#include "braft/raft.pb.h"
+#include "braft/snapshot.h"
+#include "braft/storage.h"
+#include "braft/util.h"
 
 namespace braft {
 class NodeImpl;
@@ -36,7 +36,7 @@ struct SnapshotExecutorOptions {
     SnapshotExecutorOptions();
     // URI of SnapshotStorage
     std::string uri;
-   
+
     FSMCaller* fsm_caller;
     NodeImpl* node;
     LogManager* log_manager;
@@ -52,7 +52,8 @@ struct SnapshotExecutorOptions {
 // Executing Snapshot related stuff
 class BAIDU_CACHELINE_ALIGNMENT SnapshotExecutor {
     DISALLOW_COPY_AND_ASSIGN(SnapshotExecutor);
-public:
+
+   public:
     SnapshotExecutor();
     ~SnapshotExecutor();
 
@@ -68,9 +69,9 @@ public:
     // Install snapshot according to the very RPC from leader
     // After the installing succeeds (StateMachine is reset with the snapshot)
     // or fails, done will be called to respond
-    // 
+    //
     // Errors:
-    //  - Term dismatches: which happens interrupt_downloading_snapshot was 
+    //  - Term dismatches: which happens interrupt_downloading_snapshot was
     //    called before install_snapshot, indicating that this RPC was issued by
     //    the old leader.
     //  - Interrupted: happens when interrupt_downloading_snapshot is called or
@@ -86,9 +87,9 @@ public:
     // happens when receiving RPC from new peer. In this case, it's hard to
     // determine whether to keep downloading snapshot as the new leader
     // possibly contains the missing logs and is going to send AppendEntries. To
-    // make things simplicity and leader changing during snapshot installing is 
+    // make things simplicity and leader changing during snapshot installing is
     // very rare. So we interrupt snapshot downloading when leader changes, and
-    // let the new leader decide whether to install a new snapshot or continue 
+    // let the new leader decide whether to install a new snapshot or continue
     // appending log entries.
     //
     // NOTE: we can't interrupt the snapshot insalling which has finsihed
@@ -97,12 +98,12 @@ public:
 
     // Return true if this is currently installing a snapshot, either
     // downloading or loading.
-    bool is_installing_snapshot() const { 
+    bool is_installing_snapshot() const {
         // 1: acquire fence makes this thread sees the latest change when seeing
         //    the lastest _loading_snapshot
-        // _downloading_snapshot is NULL when then downloading was successfully 
+        // _downloading_snapshot is NULL when then downloading was successfully
         // interrupted or installing has finished
-        return _downloading_snapshot.load(butil::memory_order_acquire/*1*/);
+        return _downloading_snapshot.load(butil::memory_order_acquire /*1*/);
     }
 
     // Return the backing snapshot storage
@@ -117,14 +118,13 @@ public:
     // failure)
     void join();
 
-private:
-friend class SaveSnapshotDone;
-friend class FirstSnapshotLoadDone;
-friend class InstallSnapshotDone;
+   private:
+    friend class SaveSnapshotDone;
+    friend class FirstSnapshotLoadDone;
+    friend class InstallSnapshotDone;
 
     void on_snapshot_load_done(const butil::Status& st);
-    int on_snapshot_save_done(const butil::Status& st,
-                              const SnapshotMeta& meta, 
+    int on_snapshot_save_done(const butil::Status& st, const SnapshotMeta& meta,
                               SnapshotWriter* writer);
 
     struct DownloadingSnapshot {
@@ -135,11 +135,10 @@ friend class InstallSnapshotDone;
     };
 
     int register_downloading_snapshot(DownloadingSnapshot* ds);
-    int parse_install_snapshot_request(
-            const InstallSnapshotRequest* request,
-            SnapshotMeta* meta);
+    int parse_install_snapshot_request(const InstallSnapshotRequest* request,
+                                       SnapshotMeta* meta);
     void load_downloading_snapshot(DownloadingSnapshot* ds,
-                                  const SnapshotMeta& meta);
+                                   const SnapshotMeta& meta);
     void report_error(int error_code, const char* fmt, ...);
 
     raft_mutex_t _mutex;
@@ -166,14 +165,13 @@ friend class InstallSnapshotDone;
     scoped_refptr<SnapshotThrottle> _snapshot_throttle;
 };
 
-inline SnapshotExecutorOptions::SnapshotExecutorOptions() 
-    : fsm_caller(NULL)
-    , node(NULL)
-    , log_manager(NULL)
-    , init_term(0)
-    , filter_before_copy_remote(false)
-    , usercode_in_pthread(false)
-{}
+inline SnapshotExecutorOptions::SnapshotExecutorOptions()
+    : fsm_caller(NULL),
+      node(NULL),
+      log_manager(NULL),
+      init_term(0),
+      filter_before_copy_remote(false),
+      usercode_in_pthread(false) {}
 
 }  //  namespace braft
 

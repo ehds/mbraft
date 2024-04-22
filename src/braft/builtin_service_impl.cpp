@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,13 +17,14 @@
 
 #include "braft/builtin_service_impl.h"
 
-#include <brpc/controller.h>
-#include <brpc/closure_guard.h>
-#include <brpc/http_status_code.h>
 #include <brpc/builtin/common.h>
+#include <brpc/closure_guard.h>
+#include <brpc/controller.h>
+#include <brpc/http_status_code.h>
+
 #include "braft/node.h"
-#include "braft/replicator.h"
 #include "braft/node_manager.h"
+#include "braft/replicator.h"
 
 namespace braft {
 
@@ -34,9 +35,9 @@ void RaftStatImpl::GetTabInfo(brpc::TabInfoList* info_list) const {
 }
 
 void RaftStatImpl::default_method(::google::protobuf::RpcController* controller,
-                              const ::braft::IndexRequest* /*request*/,
-                              ::braft::IndexResponse* /*response*/,
-                              ::google::protobuf::Closure* done) {
+                                  const ::braft::IndexRequest* /*request*/,
+                                  ::braft::IndexResponse* /*response*/,
+                                  ::google::protobuf::Closure* done) {
     brpc::ClosureGuard done_guard(done);
     brpc::Controller* cntl = (brpc::Controller*)controller;
     std::string group_id = cntl->http_request().unresolved_path();
@@ -55,7 +56,8 @@ void RaftStatImpl::default_method(::google::protobuf::RpcController* controller,
     butil::IOBufBuilder os;
     if (html) {
         os << "<!DOCTYPE html><html><head>\n"
-           << "<script language=\"javascript\" type=\"text/javascript\" src=\"/js/jquery_min\"></script>\n"
+           << "<script language=\"javascript\" type=\"text/javascript\" "
+              "src=\"/js/jquery_min\"></script>\n"
            << brpc::TabsHead() << "</head><body>";
         cntl->server()->PrintTabsBody(os, "raft");
     }
@@ -68,7 +70,7 @@ void RaftStatImpl::default_method(::google::protobuf::RpcController* controller,
     }
 
     std::string prev_group_id;
-    const char *newline = html ? "<br>" : "\r\n";
+    const char* newline = html ? "<br>" : "\r\n";
     for (size_t i = 0; i < nodes.size(); ++i) {
         const NodeId node_id = nodes[i]->node_id();
         group_id = node_id.group_id;

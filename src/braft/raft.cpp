@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,45 +15,46 @@
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 //          Wang,Yao(wangyao02@baidu.com)
 
+#include "braft/raft.h"
+
+#include <butil/class_name.h>
+#include <butil/string_printf.h>
 #include <pthread.h>
 #include <unistd.h>
-#include <butil/string_printf.h>
-#include <butil/class_name.h>
-#include "braft/raft.h"
-#include "braft/node.h"
-#include "braft/storage.h"
-#include "braft/node_manager.h"
+
+#include "braft/fsm_caller.h"  // IteratorImpl
 #include "braft/log.h"
 #include "braft/memory_log.h"
+#include "braft/node.h"
+#include "braft/node_manager.h"
 #include "braft/raft_meta.h"
 #include "braft/snapshot.h"
-#include "braft/fsm_caller.h"            // IteratorImpl
+#include "braft/storage.h"
 
 namespace braft {
 
 static void print_revision(std::ostream& os, void*) {
 #if defined(BRAFT_REVISION)
-        os << BRAFT_REVISION;
+    os << BRAFT_REVISION;
 #else
-        os << "undefined";
+    os << "undefined";
 #endif
 }
 
-static bvar::PassiveStatus<std::string> s_raft_revision(
-        "raft_revision", print_revision, NULL);
-
+static bvar::PassiveStatus<std::string> s_raft_revision("raft_revision",
+                                                        print_revision, NULL);
 
 static pthread_once_t global_init_once = PTHREAD_ONCE_INIT;
 
 struct GlobalExtension {
     SegmentLogStorage local_log;
     MemoryLogStorage memory_log;
-    
+
     // manage only one raft instance
     FileBasedSingleMetaStorage single_meta;
     // manage a batch of raft instances
     KVBasedMergedMetaStorage merged_meta;
-    // mix two types for double write when upgrade and downgrade  
+    // mix two types for double write when upgrade and downgrade
     MixedMetaStorage mixed_meta;
 
     LocalSnapshotStorage local_snapshot;
@@ -64,7 +65,7 @@ static void global_init_or_die_impl() {
 
     log_storage_extension()->RegisterOrDie("local", &s_ext.local_log);
     log_storage_extension()->RegisterOrDie("memory", &s_ext.memory_log);
-  
+
     // uri = local://{single_path}
     // |single_path| usually ends with `/meta'
     // NOTICE: not change "local" to "local-single" because of compatibility
@@ -74,7 +75,7 @@ static void global_init_or_die_impl() {
     meta_storage_extension()->RegisterOrDie("local-merged", &s_ext.merged_meta);
     // uri = local-mixed://merged_path={merged_path}&&single_path={single_path}
     meta_storage_extension()->RegisterOrDie("local-mixed", &s_ext.mixed_meta);
- 
+
     snapshot_storage_extension()->RegisterOrDie("local", &s_ext.local_snapshot);
 }
 
@@ -105,7 +106,7 @@ int add_service(brpc::Server* server, const char* listen_ip_and_port) {
     return add_service(server, addr);
 }
 
-// GC 
+// GC
 int gc_raft_data(const GCOptions& gc_options) {
     const VersionedGroupId vgid = gc_options.vgid;
     const std::string log_uri = gc_options.log_uri;
@@ -116,20 +117,23 @@ int gc_raft_data(const GCOptions& gc_options) {
     butil::Status status = LogStorage::destroy(log_uri);
     if (!status.ok()) {
         is_success = false;
-        LOG(WARNING) << "Group " << vgid << " failed to gc raft log, uri " << log_uri; 
+        LOG(WARNING) << "Group " << vgid << " failed to gc raft log, uri "
+                     << log_uri;
     }
     // TODO encode vgid into raft_meta_uri ?
     status = RaftMetaStorage::destroy(raft_meta_uri, vgid);
     if (!status.ok()) {
         is_success = false;
-        LOG(WARNING) << "Group " << vgid << " failed to gc raft stable, uri " << raft_meta_uri; 
+        LOG(WARNING) << "Group " << vgid << " failed to gc raft stable, uri "
+                     << raft_meta_uri;
     }
     status = SnapshotStorage::destroy(snapshot_uri);
     if (!status.ok()) {
         is_success = false;
-        LOG(WARNING) << "Group " << vgid << " failed to gc raft snapshot, uri " << snapshot_uri; 
+        LOG(WARNING) << "Group " << vgid << " failed to gc raft snapshot, uri "
+                     << snapshot_uri;
     }
-    return is_success ? 0 : -1; 
+    return is_success ? 0 : -1;
 }
 
 // ------------- Node
@@ -146,41 +150,25 @@ Node::~Node() {
     }
 }
 
-NodeId Node::node_id() {
-    return _impl->node_id();
-}
+NodeId Node::node_id() { return _impl->node_id(); }
 
-PeerId Node::leader_id() {
-    return _impl->leader_id();
-}
+PeerId Node::leader_id() { return _impl->leader_id(); }
 
-bool Node::is_leader() {
-    return _impl->is_leader();
-}
+bool Node::is_leader() { return _impl->is_leader(); }
 
-bool Node::is_leader_lease_valid() {
-    return _impl->is_leader_lease_valid();
-}
+bool Node::is_leader_lease_valid() { return _impl->is_leader_lease_valid(); }
 
 void Node::get_leader_lease_status(LeaderLeaseStatus* status) {
     return _impl->get_leader_lease_status(status);
 }
 
-int Node::init(const NodeOptions& options) {
-    return _impl->init(options);
-}
+int Node::init(const NodeOptions& options) { return _impl->init(options); }
 
-void Node::shutdown(Closure* done) {
-    _impl->shutdown(done);
-}
+void Node::shutdown(Closure* done) { _impl->shutdown(done); }
 
-void Node::join() {
-    _impl->join();
-}
+void Node::join() { _impl->join(); }
 
-void Node::apply(const Task& task) {
-    _impl->apply(task);
-}
+void Node::apply(const Task& task) { _impl->apply(task); }
 
 butil::Status Node::list_peers(std::vector<PeerId>* peers) {
     return _impl->list_peers(peers);
@@ -202,9 +190,7 @@ butil::Status Node::reset_peers(const Configuration& new_peers) {
     return _impl->reset_peers(new_peers);
 }
 
-void Node::snapshot(Closure* done) {
-    _impl->snapshot(done);
-}
+void Node::snapshot(Closure* done) { _impl->snapshot(done); }
 
 butil::Status Node::vote(int election_timeout) {
     return _impl->vote(election_timeout);
@@ -214,7 +200,8 @@ butil::Status Node::reset_election_timeout_ms(int election_timeout_ms) {
     return _impl->reset_election_timeout_ms(election_timeout_ms);
 }
 
-void Node::reset_election_timeout_ms(int election_timeout_ms, int max_clock_drift_ms) {
+void Node::reset_election_timeout_ms(int election_timeout_ms,
+                                     int max_clock_drift_ms) {
     _impl->reset_election_timeout_ms(election_timeout_ms, max_clock_drift_ms);
 }
 
@@ -222,25 +209,18 @@ int Node::transfer_leadership_to(const PeerId& peer) {
     return _impl->transfer_leadership_to(peer);
 }
 
-butil::Status Node::read_committed_user_log(const int64_t index, UserLog* user_log) {
+butil::Status Node::read_committed_user_log(const int64_t index,
+                                            UserLog* user_log) {
     return _impl->read_committed_user_log(index, user_log);
 }
 
-void Node::get_status(NodeStatus* status) {
-    return _impl->get_status(status);
-}
+void Node::get_status(NodeStatus* status) { return _impl->get_status(status); }
 
-void Node::enter_readonly_mode() {
-    return _impl->enter_readonly_mode();
-}
+void Node::enter_readonly_mode() { return _impl->enter_readonly_mode(); }
 
-void Node::leave_readonly_mode() {
-    return _impl->leave_readonly_mode();
-}
+void Node::leave_readonly_mode() { return _impl->leave_readonly_mode(); }
 
-bool Node::readonly() {
-    return _impl->readonly();
-}
+bool Node::readonly() { return _impl->readonly(); }
 
 // ------------- Iterator
 void Iterator::next() {
@@ -257,13 +237,9 @@ int64_t Iterator::index() const { return _impl->index(); }
 
 int64_t Iterator::term() const { return _impl->entry()->id.term; }
 
-const butil::IOBuf& Iterator::data() const {
-    return _impl->entry()->data;
-}
+const butil::IOBuf& Iterator::data() const { return _impl->entry()->data; }
 
-Closure* Iterator::done() const {
-    return _impl->done();
-}
+Closure* Iterator::done() const { return _impl->done(); }
 
 void Iterator::set_error_and_rollback(size_t ntail, const butil::Status* st) {
     return _impl->set_error_and_rollback(ntail, st);
@@ -279,7 +255,7 @@ void StateMachine::on_snapshot_save(SnapshotWriter* writer, Closure* done) {
     LOG(ERROR) << butil::class_name_str(*this)
                << " didn't implement on_snapshot_save";
     done->status().set_error(-1, "%s didn't implement on_snapshot_save",
-                                 butil::class_name_str(*this).c_str());
+                             butil::class_name_str(*this).c_str());
     done->Run();
 }
 
@@ -294,11 +270,12 @@ int StateMachine::on_snapshot_load(SnapshotReader* reader) {
 void StateMachine::on_leader_start(int64_t) {}
 void StateMachine::on_leader_stop(const butil::Status&) {}
 void StateMachine::on_error(const Error& e) {
-    LOG(ERROR) << "Encountered an error=" << e << " on StateMachine "
-               << butil::class_name_str(*this)
-               << ", it's highly recommended to implement this interface"
-                  " as raft stops working since some error ocurrs,"
-                  " you should figure out the cause and repair or remove this node";
+    LOG(ERROR)
+        << "Encountered an error=" << e << " on StateMachine "
+        << butil::class_name_str(*this)
+        << ", it's highly recommended to implement this interface"
+           " as raft stops working since some error ocurrs,"
+           " you should figure out the cause and repair or remove this node";
 }
 
 void StateMachine::on_configuration_committed(const Configuration& conf) {
@@ -306,7 +283,8 @@ void StateMachine::on_configuration_committed(const Configuration& conf) {
     return;
 }
 
-void StateMachine::on_configuration_committed(const Configuration& conf, int64_t index) {
+void StateMachine::on_configuration_committed(const Configuration& conf,
+                                              int64_t index) {
     (void)index;
     return on_configuration_committed(conf);
 }
@@ -315,11 +293,10 @@ void StateMachine::on_stop_following(const LeaderChangeContext&) {}
 void StateMachine::on_start_following(const LeaderChangeContext&) {}
 
 BootstrapOptions::BootstrapOptions()
-    : last_log_index(0)
-    , fsm(NULL)
-    , node_owns_fsm(false)
-    , usercode_in_pthread(false)
-{}
+    : last_log_index(0),
+      fsm(NULL),
+      node_owns_fsm(false),
+      usercode_in_pthread(false) {}
 
 int bootstrap(const BootstrapOptions& options) {
     global_init_once_or_die();
@@ -331,4 +308,4 @@ int bootstrap(const BootstrapOptions& options) {
     return rc;
 }
 
-}
+}  // namespace braft

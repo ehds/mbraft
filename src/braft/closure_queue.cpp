@@ -1,11 +1,11 @@
 // Copyright (c) 2016 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,20 +14,18 @@
 
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
-#include <bthread/unstable.h>
 #include "braft/closure_queue.h"
+
+#include <bthread/unstable.h>
+
 #include "braft/raft.h"
 
 namespace braft {
 
-ClosureQueue::ClosureQueue(bool usercode_in_pthread) 
-    : _first_index(0)
-    , _usercode_in_pthread(usercode_in_pthread)
-{}
+ClosureQueue::ClosureQueue(bool usercode_in_pthread)
+    : _first_index(0), _usercode_in_pthread(usercode_in_pthread) {}
 
-ClosureQueue::~ClosureQueue() {
-    clear();
-}
+ClosureQueue::~ClosureQueue() { clear(); }
 
 void ClosureQueue::clear() {
     std::deque<Closure*> saved_queue;
@@ -37,8 +35,8 @@ void ClosureQueue::clear() {
         _first_index = 0;
     }
     bool run_bthread = false;
-    for (std::deque<Closure*>::iterator 
-            it = saved_queue.begin(); it != saved_queue.end(); ++it) {
+    for (std::deque<Closure*>::iterator it = saved_queue.begin();
+         it != saved_queue.end(); ++it) {
         if (*it) {
             (*it)->status().set_error(EPERM, "leader stepped down");
             run_closure_in_bthread_nosig(*it, _usercode_in_pthread);
@@ -61,8 +59,8 @@ void ClosureQueue::append_pending_closure(Closure* c) {
     _queue.push_back(c);
 }
 
-int ClosureQueue::pop_closure_until(int64_t index,
-                                    std::vector<Closure*> *out, int64_t *out_first_index) {
+int ClosureQueue::pop_closure_until(int64_t index, std::vector<Closure*>* out,
+                                    int64_t* out_first_index) {
     out->clear();
     BAIDU_SCOPED_LOCK(_mutex);
     if (_queue.empty() || index < _first_index) {
@@ -84,4 +82,4 @@ int ClosureQueue::pop_closure_until(int64_t index,
     return 0;
 }
 
-} //  namespace braft
+}  //  namespace braft

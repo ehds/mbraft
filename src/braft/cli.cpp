@@ -1,11 +1,11 @@
 // Copyright (c) 2018 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,28 +16,29 @@
 
 #include "braft/cli.h"
 
-#include <brpc/channel.h>          // brpc::Channel
-#include <brpc/controller.h>       // brpc::Controller
-#include "braft/cli.pb.h"                // CliService_Stub
+#include <brpc/channel.h>     // brpc::Channel
+#include <brpc/controller.h>  // brpc::Controller
+
+#include "braft/cli.pb.h"  // CliService_Stub
 #include "braft/util.h"
 
 namespace braft {
 namespace cli {
 
-static butil::Status get_leader(const GroupId& group_id, const Configuration& conf,
-                        PeerId* leader_id) {
+static butil::Status get_leader(const GroupId& group_id,
+                                const Configuration& conf, PeerId* leader_id) {
     if (conf.empty()) {
         return butil::Status(EINVAL, "Empty group configuration");
     }
     // Construct a brpc naming service to access all the nodes in this group
     butil::Status st(-1, "Fail to get leader of group %s", group_id.c_str());
     leader_id->reset();
-    for (Configuration::const_iterator
-            iter = conf.begin(); iter != conf.end(); ++iter) {
+    for (Configuration::const_iterator iter = conf.begin(); iter != conf.end();
+         ++iter) {
         brpc::Channel channel;
         if (channel.Init(iter->addr, NULL) != 0) {
             return butil::Status(-1, "Fail to init channel to %s",
-                                     iter->to_string().c_str());
+                                 iter->to_string().c_str());
         }
         CliService_Stub stub(&channel);
         GetLeaderRequest request;
@@ -49,14 +50,14 @@ static butil::Status get_leader(const GroupId& group_id, const Configuration& co
         if (cntl.Failed()) {
             if (st.ok()) {
                 st.set_error(cntl.ErrorCode(), "[%s] %s",
-                            butil::endpoint2str(cntl.remote_side()).c_str(),
-                            cntl.ErrorText().c_str());
+                             butil::endpoint2str(cntl.remote_side()).c_str(),
+                             cntl.ErrorText().c_str());
             } else {
                 std::string saved_et = st.error_str();
-                st.set_error(cntl.ErrorCode(), "%s, [%s] %s",  saved_et.c_str(),
-                            butil::endpoint2str(cntl.remote_side()).c_str(),
-                            cntl.ErrorText().c_str());
-                }
+                st.set_error(cntl.ErrorCode(), "%s, [%s] %s", saved_et.c_str(),
+                             butil::endpoint2str(cntl.remote_side()).c_str(),
+                             cntl.ErrorText().c_str());
+            }
             continue;
         }
         leader_id->parse(response.leader_id());
@@ -75,7 +76,7 @@ butil::Status add_peer(const GroupId& group_id, const Configuration& conf,
     brpc::Channel channel;
     if (channel.Init(leader_id.addr, NULL) != 0) {
         return butil::Status(-1, "Fail to init channel to %s",
-                                leader_id.to_string().c_str());
+                             leader_id.to_string().c_str());
     }
     AddPeerRequest request;
     request.set_group_id(group_id);
@@ -100,20 +101,19 @@ butil::Status add_peer(const GroupId& group_id, const Configuration& conf,
         new_conf.add_peer(response.new_peers(i));
     }
     LOG(INFO) << "Configuration of replication group `" << group_id
-              << "' changed from " << old_conf
-              << " to " << new_conf;
+              << "' changed from " << old_conf << " to " << new_conf;
     return butil::Status::OK();
 }
 
 butil::Status remove_peer(const GroupId& group_id, const Configuration& conf,
-                         const PeerId& peer_id, const CliOptions& options) {
+                          const PeerId& peer_id, const CliOptions& options) {
     PeerId leader_id;
     butil::Status st = get_leader(group_id, conf, &leader_id);
     BRAFT_RETURN_IF(!st.ok(), st);
     brpc::Channel channel;
     if (channel.Init(leader_id.addr, NULL) != 0) {
         return butil::Status(-1, "Fail to init channel to %s",
-                                leader_id.to_string().c_str());
+                             leader_id.to_string().c_str());
     }
     RemovePeerRequest request;
     request.set_group_id(group_id);
@@ -138,8 +138,7 @@ butil::Status remove_peer(const GroupId& group_id, const Configuration& conf,
         new_conf.add_peer(response.new_peers(i));
     }
     LOG(INFO) << "Configuration of replication group `" << group_id
-              << "' changed from " << old_conf
-              << " to " << new_conf;
+              << "' changed from " << old_conf << " to " << new_conf;
     return butil::Status::OK();
 }
 
@@ -152,7 +151,7 @@ butil::Status reset_peer(const GroupId& group_id, const PeerId& peer_id,
     brpc::Channel channel;
     if (channel.Init(peer_id.addr, NULL) != 0) {
         return butil::Status(-1, "Fail to init channel to %s",
-                                peer_id.to_string().c_str());
+                             peer_id.to_string().c_str());
     }
     brpc::Controller cntl;
     cntl.set_timeout_ms(options.timeout_ms);
@@ -160,8 +159,8 @@ butil::Status reset_peer(const GroupId& group_id, const PeerId& peer_id,
     ResetPeerRequest request;
     request.set_group_id(group_id);
     request.set_peer_id(peer_id.to_string());
-    for (Configuration::const_iterator
-            iter = new_conf.begin(); iter != new_conf.end(); ++iter) {
+    for (Configuration::const_iterator iter = new_conf.begin();
+         iter != new_conf.end(); ++iter) {
         request.add_new_peers(iter->to_string());
     }
     ResetPeerResponse response;
@@ -174,11 +173,11 @@ butil::Status reset_peer(const GroupId& group_id, const PeerId& peer_id,
 }
 
 butil::Status snapshot(const GroupId& group_id, const PeerId& peer_id,
-                      const CliOptions& options) {
+                       const CliOptions& options) {
     brpc::Channel channel;
     if (channel.Init(peer_id.addr, NULL) != 0) {
         return butil::Status(-1, "Fail to init channel to %s",
-                                peer_id.to_string().c_str());
+                             peer_id.to_string().c_str());
     }
     brpc::Controller cntl;
     cntl.set_timeout_ms(options.timeout_ms);
@@ -206,14 +205,14 @@ butil::Status change_peers(const GroupId& group_id, const Configuration& conf,
     brpc::Channel channel;
     if (channel.Init(leader_id.addr, NULL) != 0) {
         return butil::Status(-1, "Fail to init channel to %s",
-                                leader_id.to_string().c_str());
+                             leader_id.to_string().c_str());
     }
 
     ChangePeersRequest request;
     request.set_group_id(group_id);
     request.set_leader_id(leader_id.to_string());
-    for (Configuration::const_iterator
-            iter = new_peers.begin(); iter != new_peers.end(); ++iter) {
+    for (Configuration::const_iterator iter = new_peers.begin();
+         iter != new_peers.end(); ++iter) {
         request.add_new_peers(iter->to_string());
     }
     ChangePeersResponse response;
@@ -235,13 +234,13 @@ butil::Status change_peers(const GroupId& group_id, const Configuration& conf,
         new_conf.add_peer(response.new_peers(i));
     }
     LOG(INFO) << "Configuration of replication group `" << group_id
-              << "' changed from " << old_conf
-              << " to " << new_conf;
+              << "' changed from " << old_conf << " to " << new_conf;
     return butil::Status::OK();
 }
 
-butil::Status transfer_leader(const GroupId& group_id, const Configuration& conf,
-                              const PeerId& peer, const CliOptions& options) {
+butil::Status transfer_leader(const GroupId& group_id,
+                              const Configuration& conf, const PeerId& peer,
+                              const CliOptions& options) {
     PeerId leader_id;
     butil::Status st = get_leader(group_id, conf, &leader_id);
     BRAFT_RETURN_IF(!st.ok(), st);
@@ -252,7 +251,7 @@ butil::Status transfer_leader(const GroupId& group_id, const Configuration& conf
     brpc::Channel channel;
     if (channel.Init(leader_id.addr, NULL) != 0) {
         return butil::Status(-1, "Fail to init channel to %s",
-                                leader_id.to_string().c_str());
+                             leader_id.to_string().c_str());
     }
     TransferLeaderRequest request;
     request.set_group_id(group_id);

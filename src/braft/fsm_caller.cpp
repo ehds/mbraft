@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,45 +16,42 @@
 //          Wang,Yao(wangyao02@baidu.com)
 //          Xiong,Kai(xiongkai@baidu.com)
 
+#include "braft/fsm_caller.h"
+
+#include <bthread/unstable.h>
 #include <butil/logging.h>
-#include "braft/raft.h"
+
+#include "braft/errno.pb.h"
+#include "braft/log_entry.h"
 #include "braft/log_manager.h"
 #include "braft/node.h"
-#include "braft/util.h"
+#include "braft/raft.h"
 #include "braft/raft.pb.h"
-#include "braft/log_entry.h"
-#include "braft/errno.pb.h"
-#include "braft/node.h"
-
-#include "braft/fsm_caller.h"
-#include <bthread/unstable.h>
+#include "braft/util.h"
 
 namespace braft {
 
 static bvar::CounterRecorder g_commit_tasks_batch_counter(
-        "raft_commit_tasks_batch_counter");
+    "raft_commit_tasks_batch_counter");
 
-DEFINE_int32(raft_fsm_caller_commit_batch, 512, 
-             "Max numbers of logs for the state machine to commit in a single batch");
+DEFINE_int32(
+    raft_fsm_caller_commit_batch, 512,
+    "Max numbers of logs for the state machine to commit in a single batch");
 BRPC_VALIDATE_GFLAG(raft_fsm_caller_commit_batch, brpc::PositiveInteger);
 
 FSMCaller::FSMCaller()
-    : _log_manager(NULL)
-    , _fsm(NULL)
-    , _closure_queue(NULL)
-    , _last_applied_index(0)
-    , _last_applied_term(0)
-    , _after_shutdown(NULL)
-    , _node(NULL)
-    , _cur_task(IDLE)
-    , _applying_index(0)
-    , _queue_started(false)
-{
-}
+    : _log_manager(NULL),
+      _fsm(NULL),
+      _closure_queue(NULL),
+      _last_applied_index(0),
+      _last_applied_term(0),
+      _after_shutdown(NULL),
+      _node(NULL),
+      _cur_task(IDLE),
+      _applying_index(0),
+      _queue_started(false) {}
 
-FSMCaller::~FSMCaller() {
-    CHECK(_after_shutdown == NULL);
-}
+FSMCaller::~FSMCaller() { CHECK(_after_shutdown == NULL); }
 
 int FSMCaller::run(void* meta, bthread::TaskIterator<ApplyTask>& iter) {
     FSMCaller* caller = (FSMCaller*)meta;
@@ -64,7 +61,7 @@ int FSMCaller::run(void* meta, bthread::TaskIterator<ApplyTask>& iter) {
     }
     int64_t max_committed_index = -1;
     size_t counter = 0;
-    size_t  batch_size = FLAGS_raft_fsm_caller_commit_batch;
+    size_t batch_size = FLAGS_raft_fsm_caller_commit_batch;
     for (; iter; ++iter) {
         if (iter->type == COMMITTED && counter < batch_size) {
             if (iter->committed_index > max_committed_index) {
@@ -81,52 +78,54 @@ int FSMCaller::run(void* meta, bthread::TaskIterator<ApplyTask>& iter) {
                 batch_size = FLAGS_raft_fsm_caller_commit_batch;
             }
             switch (iter->type) {
-            case COMMITTED:
-                if (iter->committed_index > max_committed_index) {
-                    max_committed_index = iter->committed_index;
-                    counter++;
-                }
-                break;
-            case SNAPSHOT_SAVE:
-                caller->_cur_task = SNAPSHOT_SAVE;
-                if (caller->pass_by_status(iter->done)) {
-                    caller->do_snapshot_save((SaveSnapshotClosure*)iter->done);
-                }
-                break;
-            case SNAPSHOT_LOAD:
-                caller->_cur_task = SNAPSHOT_LOAD;
-                // TODO: do we need to allow the snapshot loading to recover the
-                // StateMachine if possible?
-                if (caller->pass_by_status(iter->done)) {
-                    caller->do_snapshot_load((LoadSnapshotClosure*)iter->done);
-                }
-                break;
-            case LEADER_STOP:
-                caller->_cur_task = LEADER_STOP;
-                caller->do_leader_stop(*(iter->status));
-                delete iter->status;
-                break;
-            case LEADER_START:
-                caller->do_leader_start(*(iter->leader_start_context));
-                delete iter->leader_start_context;
-                break;
-            case START_FOLLOWING:
-                caller->_cur_task = START_FOLLOWING;
-                caller->do_start_following(*(iter->leader_change_context));
-                delete iter->leader_change_context;
-                break;
-            case STOP_FOLLOWING:
-                caller->_cur_task = STOP_FOLLOWING;
-                caller->do_stop_following(*(iter->leader_change_context));
-                delete iter->leader_change_context;
-                break;
-            case ERROR:
-                caller->_cur_task = ERROR;
-                caller->do_on_error((OnErrorClousre*)iter->done);
-                break;
-            case IDLE:
-                CHECK(false) << "Can't reach here";
-                break;
+                case COMMITTED:
+                    if (iter->committed_index > max_committed_index) {
+                        max_committed_index = iter->committed_index;
+                        counter++;
+                    }
+                    break;
+                case SNAPSHOT_SAVE:
+                    caller->_cur_task = SNAPSHOT_SAVE;
+                    if (caller->pass_by_status(iter->done)) {
+                        caller->do_snapshot_save(
+                            (SaveSnapshotClosure*)iter->done);
+                    }
+                    break;
+                case SNAPSHOT_LOAD:
+                    caller->_cur_task = SNAPSHOT_LOAD;
+                    // TODO: do we need to allow the snapshot loading to recover
+                    // the StateMachine if possible?
+                    if (caller->pass_by_status(iter->done)) {
+                        caller->do_snapshot_load(
+                            (LoadSnapshotClosure*)iter->done);
+                    }
+                    break;
+                case LEADER_STOP:
+                    caller->_cur_task = LEADER_STOP;
+                    caller->do_leader_stop(*(iter->status));
+                    delete iter->status;
+                    break;
+                case LEADER_START:
+                    caller->do_leader_start(*(iter->leader_start_context));
+                    delete iter->leader_start_context;
+                    break;
+                case START_FOLLOWING:
+                    caller->_cur_task = START_FOLLOWING;
+                    caller->do_start_following(*(iter->leader_change_context));
+                    delete iter->leader_change_context;
+                    break;
+                case STOP_FOLLOWING:
+                    caller->_cur_task = STOP_FOLLOWING;
+                    caller->do_stop_following(*(iter->leader_change_context));
+                    delete iter->leader_change_context;
+                    break;
+                case ERROR:
+                    caller->_cur_task = ERROR;
+                    caller->do_on_error((OnErrorClousre*)iter->done);
+                    break;
+                case IDLE:
+                    CHECK(false) << "Can't reach here";
+                    break;
             };
         }
     }
@@ -144,9 +143,8 @@ bool FSMCaller::pass_by_status(Closure* done) {
     brpc::ClosureGuard done_guard(done);
     if (!_error.status().ok()) {
         if (done) {
-            done->status().set_error(
-                        EINVAL, "FSMCaller is in bad status=`%s'",
-                                _error.status().error_cstr());
+            done->status().set_error(EINVAL, "FSMCaller is in bad status=`%s'",
+                                     _error.status().error_cstr());
         }
         return false;
     }
@@ -154,9 +152,9 @@ bool FSMCaller::pass_by_status(Closure* done) {
     return true;
 }
 
-int FSMCaller::init(const FSMCallerOptions &options) {
-    if (options.log_manager == NULL || options.fsm == NULL 
-            || options.closure_queue == NULL) {
+int FSMCaller::init(const FSMCallerOptions& options) {
+    if (options.log_manager == NULL || options.fsm == NULL ||
+        options.closure_queue == NULL) {
         return EINVAL;
     }
     _log_manager = options.log_manager;
@@ -170,15 +168,12 @@ int FSMCaller::init(const FSMCallerOptions &options) {
     if (_node) {
         _node->AddRef();
     }
-    
+
     bthread::ExecutionQueueOptions execq_opt;
-    execq_opt.bthread_attr = options.usercode_in_pthread 
-                             ? BTHREAD_ATTR_PTHREAD
-                             : BTHREAD_ATTR_NORMAL;
-    if (bthread::execution_queue_start(&_queue_id,
-                                   &execq_opt,
-                                   FSMCaller::run,
-                                   this) != 0) {
+    execq_opt.bthread_attr = options.usercode_in_pthread ? BTHREAD_ATTR_PTHREAD
+                                                         : BTHREAD_ATTR_NORMAL;
+    if (bthread::execution_queue_start(&_queue_id, &execq_opt, FSMCaller::run,
+                                       this) != 0) {
         LOG(ERROR) << "fsm fail to start execution_queue";
         return -1;
     }
@@ -216,14 +211,12 @@ int FSMCaller::on_committed(int64_t committed_index) {
 }
 
 class OnErrorClousre : public Closure {
-public:
-    OnErrorClousre(const Error& e) : _e(e) {
-    }
+   public:
+    OnErrorClousre(const Error& e) : _e(e) {}
     const Error& error() { return _e; }
-    void Run() {
-        delete this;
-    }
-private:
+    void Run() { delete this; }
+
+   private:
     ~OnErrorClousre() {}
     Error _e;
 };
@@ -233,7 +226,7 @@ int FSMCaller::on_error(const Error& e) {
     ApplyTask t;
     t.type = ERROR;
     t.done = c;
-    if (bthread::execution_queue_execute(_queue_id, t, 
+    if (bthread::execution_queue_execute(_queue_id, t,
                                          &bthread::TASK_OPTIONS_URGENT) != 0) {
         c->Run();
         return -1;
@@ -264,8 +257,8 @@ void FSMCaller::do_committed(int64_t committed_index) {
     if (!_error.status().ok()) {
         return;
     }
-    int64_t last_applied_index = _last_applied_index.load(
-                                        butil::memory_order_relaxed);
+    int64_t last_applied_index =
+        _last_applied_index.load(butil::memory_order_relaxed);
 
     // We can tolerate the disorder of committed_index
     if (last_applied_index >= committed_index) {
@@ -277,15 +270,17 @@ void FSMCaller::do_committed(int64_t committed_index) {
                                                   &first_closure_index));
 
     IteratorImpl iter_impl(_fsm, _log_manager, &closure, first_closure_index,
-                 last_applied_index, committed_index, &_applying_index);
+                           last_applied_index, committed_index,
+                           &_applying_index);
     for (; iter_impl.is_good();) {
         if (iter_impl.entry()->type != ENTRY_TYPE_DATA) {
             if (iter_impl.entry()->type == ENTRY_TYPE_CONFIGURATION) {
                 if (iter_impl.entry()->old_peers == NULL) {
-                    // Joint stage is not supposed to be noticeable by end users.
+                    // Joint stage is not supposed to be noticeable by end
+                    // users.
                     _fsm->on_configuration_committed(
-                            Configuration(*iter_impl.entry()->peers),
-                            iter_impl.entry()->id.index);
+                        Configuration(*iter_impl.entry()->peers),
+                        iter_impl.entry()->id.index);
                 }
             }
             // For other entries, we have nothing to do besides flush the
@@ -300,9 +295,9 @@ void FSMCaller::do_committed(int64_t committed_index) {
         Iterator iter(&iter_impl);
         _fsm->on_apply(iter);
         LOG_IF(ERROR, iter.valid())
-                << "Node " << _node->node_id() 
-                << " Iterator is still valid, did you return before iterator "
-                   " reached the end?";
+            << "Node " << _node->node_id()
+            << " Iterator is still valid, did you return before iterator "
+               " reached the end?";
         // Try move to next in case that we pass the same log twice.
         iter.next();
     }
@@ -328,27 +323,27 @@ int FSMCaller::on_snapshot_save(SaveSnapshotClosure* done) {
 void FSMCaller::do_snapshot_save(SaveSnapshotClosure* done) {
     CHECK(done);
 
-    int64_t last_applied_index = _last_applied_index.load(butil::memory_order_relaxed);
+    int64_t last_applied_index =
+        _last_applied_index.load(butil::memory_order_relaxed);
 
     SnapshotMeta meta;
     meta.set_last_included_index(last_applied_index);
     meta.set_last_included_term(_last_applied_term);
     ConfigurationEntry conf_entry;
     _log_manager->get_configuration(last_applied_index, &conf_entry);
-    for (Configuration::const_iterator
-            iter = conf_entry.conf.begin();
-            iter != conf_entry.conf.end(); ++iter) { 
+    for (Configuration::const_iterator iter = conf_entry.conf.begin();
+         iter != conf_entry.conf.end(); ++iter) {
         *meta.add_peers() = iter->to_string();
     }
-    for (Configuration::const_iterator
-            iter = conf_entry.old_conf.begin();
-            iter != conf_entry.old_conf.end(); ++iter) { 
+    for (Configuration::const_iterator iter = conf_entry.old_conf.begin();
+         iter != conf_entry.old_conf.end(); ++iter) {
         *meta.add_old_peers() = iter->to_string();
     }
 
     SnapshotWriter* writer = done->start(meta);
     if (!writer) {
-        done->status().set_error(EINVAL, "snapshot_storage create SnapshotWriter failed");
+        done->status().set_error(
+            EINVAL, "snapshot_storage create SnapshotWriter failed");
         done->Run();
         return;
     }
@@ -365,7 +360,7 @@ int FSMCaller::on_snapshot_load(LoadSnapshotClosure* done) {
 }
 
 void FSMCaller::do_snapshot_load(LoadSnapshotClosure* done) {
-    //TODO done_guard
+    // TODO done_guard
     SnapshotReader* reader = done->start();
     if (!reader) {
         done->status().set_error(EINVAL, "open SnapshotReader failed");
@@ -388,17 +383,20 @@ void FSMCaller::do_snapshot_load(LoadSnapshotClosure* done) {
     }
 
     LogId last_applied_id;
-    last_applied_id.index = _last_applied_index.load(butil::memory_order_relaxed);
+    last_applied_id.index =
+        _last_applied_index.load(butil::memory_order_relaxed);
     last_applied_id.term = _last_applied_term;
     LogId snapshot_id;
     snapshot_id.index = meta.last_included_index();
     snapshot_id.term = meta.last_included_term();
     if (last_applied_id > snapshot_id) {
-        done->status().set_error(ESTALE,"Loading a stale snapshot"
-                                 " last_applied_index=%" PRId64 " last_applied_term=%" PRId64
-                                 " snapshot_index=%" PRId64 " snapshot_term=%" PRId64,
-                                 last_applied_id.index, last_applied_id.term,
-                                 snapshot_id.index, snapshot_id.term);
+        done->status().set_error(
+            ESTALE,
+            "Loading a stale snapshot"
+            " last_applied_index=%" PRId64 " last_applied_term=%" PRId64
+            " snapshot_index=%" PRId64 " snapshot_term=%" PRId64,
+            last_applied_id.index, last_applied_id.term, snapshot_id.index,
+            snapshot_id.term);
         return done->Run();
     }
 
@@ -457,16 +455,19 @@ void FSMCaller::do_leader_stop(const butil::Status& status) {
     _fsm->on_leader_stop(status);
 }
 
-void FSMCaller::do_leader_start(const LeaderStartContext& leader_start_context) {
+void FSMCaller::do_leader_start(
+    const LeaderStartContext& leader_start_context) {
     _node->leader_lease_start(leader_start_context.lease_epoch);
     _fsm->on_leader_start(leader_start_context.term);
 }
 
-int FSMCaller::on_start_following(const LeaderChangeContext& start_following_context) {
+int FSMCaller::on_start_following(
+    const LeaderChangeContext& start_following_context) {
     ApplyTask task;
     task.type = START_FOLLOWING;
-    LeaderChangeContext* context  = new LeaderChangeContext(start_following_context.leader_id(), 
-            start_following_context.term(), start_following_context.status());
+    LeaderChangeContext* context = new LeaderChangeContext(
+        start_following_context.leader_id(), start_following_context.term(),
+        start_following_context.status());
     task.leader_change_context = context;
     if (bthread::execution_queue_execute(_queue_id, task) != 0) {
         delete context;
@@ -475,11 +476,13 @@ int FSMCaller::on_start_following(const LeaderChangeContext& start_following_con
     return 0;
 }
 
-int FSMCaller::on_stop_following(const LeaderChangeContext& stop_following_context) {
+int FSMCaller::on_stop_following(
+    const LeaderChangeContext& stop_following_context) {
     ApplyTask task;
     task.type = STOP_FOLLOWING;
-    LeaderChangeContext* context = new LeaderChangeContext(stop_following_context.leader_id(), 
-            stop_following_context.term(), stop_following_context.status());
+    LeaderChangeContext* context = new LeaderChangeContext(
+        stop_following_context.leader_id(), stop_following_context.term(),
+        stop_following_context.status());
     task.leader_change_context = context;
     if (bthread::execution_queue_execute(_queue_id, task) != 0) {
         delete context;
@@ -488,48 +491,50 @@ int FSMCaller::on_stop_following(const LeaderChangeContext& stop_following_conte
     return 0;
 }
 
-void FSMCaller::do_start_following(const LeaderChangeContext& start_following_context) {
+void FSMCaller::do_start_following(
+    const LeaderChangeContext& start_following_context) {
     _fsm->on_start_following(start_following_context);
 }
 
-void FSMCaller::do_stop_following(const LeaderChangeContext& stop_following_context) {
+void FSMCaller::do_stop_following(
+    const LeaderChangeContext& stop_following_context) {
     _fsm->on_stop_following(stop_following_context);
 }
 
-void FSMCaller::describe(std::ostream &os, bool use_html) {
+void FSMCaller::describe(std::ostream& os, bool use_html) {
     const char* newline = (use_html) ? "<br>" : "\n";
     TaskType cur_task = _cur_task;
-    const int64_t applying_index = _applying_index.load(
-                                    butil::memory_order_relaxed);
+    const int64_t applying_index =
+        _applying_index.load(butil::memory_order_relaxed);
     os << "state_machine: ";
     switch (cur_task) {
-    case IDLE:
-        os << "Idle";
-        break;
-    case COMMITTED:
-        os << "Applying log_index=" << applying_index;
-        break;
-    case SNAPSHOT_SAVE:
-        os << "Saving snapshot";
-        break;
-    case SNAPSHOT_LOAD:
-        os << "Loading snapshot";
-        break;
-    case ERROR:
-        os << "Notifying error";
-        break;
-    case LEADER_STOP:
-        os << "Notifying leader stop";
-        break;
-    case LEADER_START:
-        os << "Notifying leader start";
-        break;
-    case START_FOLLOWING:
-        os << "Notifying start following";
-        break;
-    case STOP_FOLLOWING:
-        os << "Notifying stop following";
-        break;
+        case IDLE:
+            os << "Idle";
+            break;
+        case COMMITTED:
+            os << "Applying log_index=" << applying_index;
+            break;
+        case SNAPSHOT_SAVE:
+            os << "Saving snapshot";
+            break;
+        case SNAPSHOT_LOAD:
+            os << "Loading snapshot";
+            break;
+        case ERROR:
+            os << "Notifying error";
+            break;
+        case LEADER_STOP:
+            os << "Notifying leader stop";
+            break;
+        case LEADER_START:
+            os << "Notifying leader start";
+            break;
+        case START_FOLLOWING:
+            os << "Notifying start following";
+            break;
+        case STOP_FOLLOWING:
+            os << "Notifying stop following";
+            break;
     }
     os << newline;
 }
@@ -551,20 +556,20 @@ void FSMCaller::join() {
 }
 
 IteratorImpl::IteratorImpl(StateMachine* sm, LogManager* lm,
-                          std::vector<Closure*> *closure, 
-                          int64_t first_closure_index,
-                          int64_t last_applied_index, 
-                          int64_t committed_index,
-                          butil::atomic<int64_t>* applying_index)
-        : _sm(sm)
-        , _lm(lm)
-        , _closure(closure)
-        , _first_closure_index(first_closure_index)
-        , _cur_index(last_applied_index)
-        , _committed_index(committed_index)
-        , _cur_entry(NULL)
-        , _applying_index(applying_index)
-{ next(); }
+                           std::vector<Closure*>* closure,
+                           int64_t first_closure_index,
+                           int64_t last_applied_index, int64_t committed_index,
+                           butil::atomic<int64_t>* applying_index)
+    : _sm(sm),
+      _lm(lm),
+      _closure(closure),
+      _first_closure_index(first_closure_index),
+      _cur_index(last_applied_index),
+      _committed_index(committed_index),
+      _cur_entry(NULL),
+      _applying_index(applying_index) {
+    next();
+}
 
 void IteratorImpl::next() {
     if (_cur_entry) {
@@ -578,9 +583,9 @@ void IteratorImpl::next() {
             if (_cur_entry == NULL) {
                 _error.set_type(ERROR_TYPE_LOG);
                 _error.status().set_error(-1,
-                        "Fail to get entry at index=%" PRId64
-                        " while committed_index=%" PRId64,
-                        _cur_index, _committed_index);
+                                          "Fail to get entry at index=%" PRId64
+                                          " while committed_index=%" PRId64,
+                                          _cur_index, _committed_index);
             }
             _applying_index->store(_cur_index, butil::memory_order_relaxed);
         }
@@ -594,8 +599,8 @@ Closure* IteratorImpl::done() const {
     return (*_closure)[_cur_index - _first_closure_index];
 }
 
-void IteratorImpl::set_error_and_rollback(
-            size_t ntail, const butil::Status* st) {
+void IteratorImpl::set_error_and_rollback(size_t ntail,
+                                          const butil::Status* st) {
     if (ntail == 0) {
         CHECK(false) << "Invalid ntail=" << ntail;
         return;
@@ -610,15 +615,16 @@ void IteratorImpl::set_error_and_rollback(
         _cur_entry = NULL;
     }
     _error.set_type(ERROR_TYPE_STATE_MACHINE);
-    _error.status().set_error(ESTATEMACHINE, 
-            "StateMachine meet critical error when applying one "
-            " or more tasks since index=%" PRId64 ", %s", _cur_index,
-            (st ? st->error_cstr() : "none"));
+    _error.status().set_error(
+        ESTATEMACHINE,
+        "StateMachine meet critical error when applying one "
+        " or more tasks since index=%" PRId64 ", %s",
+        _cur_index, (st ? st->error_cstr() : "none"));
 }
 
 void IteratorImpl::run_the_rest_closure_with_error() {
     for (int64_t i = std::max(_cur_index, _first_closure_index);
-            i <= _committed_index; ++i) {
+         i <= _committed_index; ++i) {
         Closure* done = (*_closure)[i - _first_closure_index];
         if (done) {
             done->status() = _error.status();

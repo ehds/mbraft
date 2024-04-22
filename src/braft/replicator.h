@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,17 +16,17 @@
 //          Wang,Yao(wangyao02@baidu.com)
 //          Xiong,Kai(xiongkai@baidu.com)
 
-#ifndef  BRAFT_REPLICATOR_H
-#define  BRAFT_REPLICATOR_H
+#ifndef BRAFT_REPLICATOR_H
+#define BRAFT_REPLICATOR_H
 
-#include <bthread/bthread.h>                            // bthread_id
-#include <brpc/channel.h>                  // brpc::Channel
+#include <brpc/channel.h>     // brpc::Channel
+#include <bthread/bthread.h>  // bthread_id
 
-#include "braft/storage.h"                       // SnapshotStorage
-#include "braft/raft.h"                          // Closure
-#include "braft/configuration.h"                 // Configuration
-#include "braft/raft.pb.h"                       // AppendEntriesRequest
-#include "braft/log_manager.h"                   // LogManager
+#include "braft/configuration.h"  // Configuration
+#include "braft/log_manager.h"    // LogManager
+#include "braft/raft.h"           // Closure
+#include "braft/raft.pb.h"        // AppendEntriesRequest
+#include "braft/storage.h"        // SnapshotStorage
 
 namespace braft {
 
@@ -35,8 +35,8 @@ class BallotBox;
 class NodeImpl;
 class SnapshotThrottle;
 
-// A shared structure to store some high-frequency replicator statuses, for reducing
-// the lock contention between Replicator and NodeImpl.
+// A shared structure to store some high-frequency replicator statuses, for
+// reducing the lock contention between Replicator and NodeImpl.
 struct ReplicatorStatus : public butil::RefCountedThreadSafe<ReplicatorStatus> {
     butil::atomic<int64_t> last_rpc_send_timestamp;
 
@@ -52,7 +52,7 @@ struct ReplicatorOptions {
     PeerId peer_id;
     LogManager* log_manager;
     BallotBox* ballot_box;
-    NodeImpl *node;
+    NodeImpl* node;
     int64_t term;
     SnapshotStorage* snapshot_storage;
     SnapshotThrottle* snapshot_throttle;
@@ -62,16 +62,15 @@ struct ReplicatorOptions {
 typedef uint64_t ReplicatorId;
 
 class CatchupClosure : public Closure {
-public:
+   public:
     virtual void Run() = 0;
-protected:
+
+   protected:
     CatchupClosure()
-        : _max_margin(0)
-        , _has_timer(false)
-        , _error_was_set(false)
-    {}
-private:
-friend class Replicator;
+        : _max_margin(0), _has_timer(false), _error_was_set(false) {}
+
+   private:
+    friend class Replicator;
     int64_t _max_margin;
     bthread_timer_t _timer;
     bool _has_timer;
@@ -80,7 +79,7 @@ friend class Replicator;
 };
 
 class BAIDU_CACHELINE_ALIGNMENT Replicator {
-public:
+   public:
     // Called by the leader, otherwise the behavior is undefined
     // Start to replicate the log to the given follower
     static int start(const ReplicatorOptions&, ReplicatorId* id);
@@ -92,7 +91,7 @@ public:
     static int join(ReplicatorId);
 
     // Wait until the margin between |last_log_index| from leader and the peer
-    // is less than |max_margin| or error occurs. 
+    // is less than |max_margin| or error occurs.
     // |done| can't be NULL and it is called after waiting fnishies.
     static void wait_for_caught_up(ReplicatorId, int64_t max_margin,
                                    const timespec* due_time,
@@ -127,8 +126,8 @@ public:
 
     // Check if a replicator is readonly
     static bool readonly(ReplicatorId id);
-    
-private:
+
+   private:
     enum St {
         IDLE,
         BLOCKING,
@@ -155,8 +154,8 @@ private:
     void _send_empty_entries(bool is_heartbeat);
     void _send_entries();
     void _notify_on_caught_up(int error_code, bool);
-    int _fill_common_fields(AppendEntriesRequest* request, int64_t prev_log_index,
-                            bool is_heartbeat);
+    int _fill_common_fields(AppendEntriesRequest* request,
+                            int64_t prev_log_index, bool is_heartbeat);
     void _block(long start_time_us, int error_code);
     void _install_snapshot();
     void _start_heartbeat_timer(long start_time_us);
@@ -170,23 +169,20 @@ private:
     }
     int _change_readonly_config(bool readonly);
 
-    static void _on_rpc_returned(
-                ReplicatorId id, brpc::Controller* cntl,
-                AppendEntriesRequest* request, 
-                AppendEntriesResponse* response,
-                int64_t);
+    static void _on_rpc_returned(ReplicatorId id, brpc::Controller* cntl,
+                                 AppendEntriesRequest* request,
+                                 AppendEntriesResponse* response, int64_t);
 
-    static void _on_heartbeat_returned(
-                ReplicatorId id, brpc::Controller* cntl,
-                AppendEntriesRequest* request, 
-                AppendEntriesResponse* response,
-                int64_t);
+    static void _on_heartbeat_returned(ReplicatorId id, brpc::Controller* cntl,
+                                       AppendEntriesRequest* request,
+                                       AppendEntriesResponse* response,
+                                       int64_t);
 
-    static void _on_timeout_now_returned(
-                ReplicatorId id, brpc::Controller* cntl,
-                TimeoutNowRequest* request, 
-                TimeoutNowResponse* response,
-                bool old_leader_stepped_down);
+    static void _on_timeout_now_returned(ReplicatorId id,
+                                         brpc::Controller* cntl,
+                                         TimeoutNowRequest* request,
+                                         TimeoutNowResponse* response,
+                                         bool old_leader_stepped_down);
 
     static void _on_timedout(void* arg);
     static void* _send_heartbeat(void* arg);
@@ -195,42 +191,40 @@ private:
     static int _continue_sending(void* arg, int error_code);
     static void* _run_on_caught_up(void*);
     static void _on_catch_up_timedout(void*);
-    static void _on_block_timedout(void *arg);
-    static void* _on_block_timedout_in_new_thread(void *arg);
+    static void _on_block_timedout(void* arg);
+    static void* _on_block_timedout_in_new_thread(void* arg);
     static void _on_install_snapshot_returned(
-                ReplicatorId id, brpc::Controller* cntl,
-                InstallSnapshotRequest* request, 
-                InstallSnapshotResponse* response);
+        ReplicatorId id, brpc::Controller* cntl,
+        InstallSnapshotRequest* request, InstallSnapshotResponse* response);
     void _destroy();
     void _describe(std::ostream& os, bool use_html);
     void _get_status(PeerStatus* status);
     bool _is_catchup(int64_t max_margin) {
-        // We should wait until install snapshot finish. If the process is throttled,
-        // it maybe very slow.
+        // We should wait until install snapshot finish. If the process is
+        // throttled, it maybe very slow.
         if (_next_index < _options.log_manager->first_log_index()) {
             return false;
         }
-        if (_min_flying_index() - 1 + max_margin
-                < _options.log_manager->last_log_index()) {
+        if (_min_flying_index() - 1 + max_margin <
+            _options.log_manager->last_log_index()) {
             return false;
         }
         return true;
     }
-    bool is_witness() const {
-        return _options.peer_id.is_witness();
-    }
+    bool is_witness() const { return _options.peer_id.is_witness(); }
     void _close_reader();
     int64_t _last_rpc_send_timestamp() {
-        return _options.replicator_status->last_rpc_send_timestamp.load(butil::memory_order_relaxed);
+        return _options.replicator_status->last_rpc_send_timestamp.load(
+            butil::memory_order_relaxed);
     }
     void _update_last_rpc_send_timestamp(int64_t new_timestamp) {
         if (new_timestamp > _last_rpc_send_timestamp()) {
-            _options.replicator_status->last_rpc_send_timestamp
-                .store(new_timestamp, butil::memory_order_relaxed);
+            _options.replicator_status->last_rpc_send_timestamp.store(
+                new_timestamp, butil::memory_order_relaxed);
         }
     }
 
-private:
+   private:
     struct FlyingAppendEntriesRpc {
         int64_t log_index;
         int entries_size;
@@ -238,7 +232,7 @@ private:
         FlyingAppendEntriesRpc(int64_t index, int size, brpc::CallId id)
             : log_index(index), entries_size(size), call_id(id) {}
     };
-    
+
     brpc::Channel _sending_channel;
     int64_t _next_index;
     int64_t _flying_append_entries_size;
@@ -260,7 +254,7 @@ private:
     ReplicatorOptions _options;
     bthread_timer_t _heartbeat_timer;
     SnapshotReader* _reader;
-    CatchupClosure *_catchup_closure;
+    CatchupClosure* _catchup_closure;
 };
 
 struct ReplicatorGroupOptions {
@@ -283,11 +277,11 @@ struct ReplicatorGroupOptions {
 //
 // Note: The methods of ReplicatorGroup are NOT thread-safe
 class ReplicatorGroup {
-public:
+   public:
     ReplicatorGroup();
     ~ReplicatorGroup();
     int init(const NodeId& node_id, const ReplicatorGroupOptions&);
-    
+
     // Add a replicator attached with |peer|
     // will be a notification when the replicator catches up according to the
     // arguments.
@@ -295,7 +289,7 @@ public:
     // immediately, annd might call node->step_down which might have race with
     // the caller, you should deal with this situation.
     int add_replicator(const PeerId& peer);
-    
+
     // wait the very peer catchup
     int wait_caughtup(const PeerId& peer, int64_t max_margin,
                       const timespec* due_time, CatchupClosure* done);
@@ -305,7 +299,7 @@ public:
     // Stop all the replicators
     int stop_all();
 
-    int stop_replicator(const PeerId &peer);
+    int stop_replicator(const PeerId& peer);
 
     // Reset the term of all to-add replicators.
     // This method is supposed to be called when the very candidate becomes the
@@ -315,11 +309,11 @@ public:
 
     // Reset the interval of heartbeat
     // This method is supposed to be called when the very candidate becomes the
-    // leader, use new heartbeat_interval, maybe call vote() reset election_timeout
-    // Return 0 on success, -1 otherwise
+    // leader, use new heartbeat_interval, maybe call vote() reset
+    // election_timeout Return 0 on success, -1 otherwise
     int reset_heartbeat_interval(int new_interval_ms);
-    
-    // Reset the interval of election_timeout for replicator, 
+
+    // Reset the interval of election_timeout for replicator,
     // used in rpc's set_timeout_ms
     int reset_election_timeout_interval(int new_interval_ms);
 
@@ -334,14 +328,14 @@ public:
 
     // Stop all the replicators except for the one that we think can be the
     // candidate of the next leader, which has the largest `last_log_id' among
-    // peers in |current_conf|. 
+    // peers in |current_conf|.
     // |candidate| would be assigned to a valid ReplicatorId if we found one and
     // the caller is responsible for stopping it, or an invalid value if we
     // found none.
     // Returns 0 on success and -1 otherwise.
     int stop_all_and_find_the_next_candidate(ReplicatorId* candidate,
                                              const ConfigurationEntry& conf);
-    
+
     // Find the follower with the most log entries in this group, which is
     // likely becomes the leader according to the election algorithm of raft.
     // Returns 0 on success and |peer_id| is assigned with the very peer.
@@ -353,7 +347,8 @@ public:
     void list_replicators(std::vector<ReplicatorId>* out) const;
 
     // List all the existing replicators with PeerId
-    void list_replicators(std::vector<std::pair<PeerId, ReplicatorId> >* out) const;
+    void list_replicators(
+        std::vector<std::pair<PeerId, ReplicatorId> >* out) const;
 
     // Change the readonly config for a peer
     int change_readonly_config(const PeerId& peer, bool readonly);
@@ -361,9 +356,8 @@ public:
     // Check if a replicator is in readonly
     bool readonly(const PeerId& peer) const;
 
-private:
-
-    int _add_replicator(const PeerId& peer, ReplicatorId *rid);
+   private:
+    int _add_replicator(const PeerId& peer, ReplicatorId* rid);
 
     struct ReplicatorIdAndStatus {
         ReplicatorId id;
@@ -378,4 +372,4 @@ private:
 
 }  //  namespace braft
 
-#endif  //BRAFT_REPLICATOR_H
+#endif  // BRAFT_REPLICATOR_H

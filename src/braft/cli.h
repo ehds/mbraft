@@ -1,11 +1,11 @@
 // Copyright (c) 2018 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,8 +14,8 @@
 
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
-#ifndef  BRAFT_CLI_H
-#define  BRAFT_CLI_H
+#ifndef BRAFT_CLI_H
+#define BRAFT_CLI_H
 
 #include "braft/raft.h"
 
@@ -39,13 +39,14 @@ butil::Status remove_peer(const GroupId& group_id, const Configuration& conf,
                           const PeerId& peer_id, const CliOptions& options);
 
 // Gracefully change the peers of the replication group.
-butil::Status change_peers(const GroupId& group_id, const Configuration& conf, 
+butil::Status change_peers(const GroupId& group_id, const Configuration& conf,
                            const Configuration& new_peers,
                            const CliOptions& options);
 
 // Transfer the leader of the replication group to the target peer
-butil::Status transfer_leader(const GroupId& group_id, const Configuration& conf,
-                              const PeerId& peer, const CliOptions& options);
+butil::Status transfer_leader(const GroupId& group_id,
+                              const Configuration& conf, const PeerId& peer,
+                              const CliOptions& options);
 
 // Reset the peer set of the target peer
 butil::Status reset_peer(const GroupId& group_id, const PeerId& peer_id,
@@ -59,4 +60,4 @@ butil::Status snapshot(const GroupId& group_id, const PeerId& peer_id,
 }  // namespace cli
 }  //  namespace braft
 
-#endif  //BRAFT_CLI_H
+#endif  // BRAFT_CLI_H

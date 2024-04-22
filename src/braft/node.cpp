@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,47 +16,50 @@
 //          Zhangyi Chen(chenzhangyi01@baidu.com)
 //          Xiong,Kai(xiongkai@baidu.com)
 
-#include <bthread/unstable.h>
-#include <brpc/errno.pb.h>
-#include <brpc/controller.h>
+#include "braft/node.h"
+
 #include <brpc/channel.h>
+#include <brpc/controller.h>
+#include <brpc/errno.pb.h>
+#include <bthread/unstable.h>
+
 #include <optional>
 
+#include "braft/builtin_service_impl.h"
 #include "braft/configuration.h"
 #include "braft/errno.pb.h"
-#include "braft/util.h"
-#include "braft/raft.h"
-#include "braft/node.h"
+#include "braft/file_service.h"
 #include "braft/log.h"
+#include "braft/node_manager.h"
+#include "braft/raft.h"
 #include "braft/raft_meta.h"
 #include "braft/snapshot.h"
-#include "braft/file_service.h"
-#include "braft/builtin_service_impl.h"
-#include "braft/node_manager.h"
 #include "braft/snapshot_executor.h"
-#include "braft/errno.pb.h"
 #include "braft/sync_point.h"
+#include "braft/util.h"
 #include "butil/logging.h"
-
 
 namespace braft {
 
-DEFINE_int32(raft_max_election_delay_ms, 1000, 
+DEFINE_int32(raft_max_election_delay_ms, 1000,
              "Max election delay time allowed by user");
 BRPC_VALIDATE_GFLAG(raft_max_election_delay_ms, brpc::PositiveInteger);
 
-DEFINE_bool(raft_step_down_when_vote_timedout, true, 
+DEFINE_bool(raft_step_down_when_vote_timedout, true,
             "candidate steps down when reaching timeout");
 BRPC_VALIDATE_GFLAG(raft_step_down_when_vote_timedout, brpc::PassValidate);
 
-DEFINE_bool(raft_enable_append_entries_cache, false,
-            "enable cache for out-of-order append entries requests, should used when "
-            "pipeline replication is enabled (raft_max_parallel_append_entries_rpc_num > 1).");
+DEFINE_bool(
+    raft_enable_append_entries_cache, false,
+    "enable cache for out-of-order append entries requests, should used when "
+    "pipeline replication is enabled (raft_max_parallel_append_entries_rpc_num "
+    "> 1).");
 BRPC_VALIDATE_GFLAG(raft_enable_append_entries_cache, ::brpc::PassValidate);
 
 DEFINE_int32(raft_max_append_entries_cache_size, 8,
              "the max size of out-of-order append entries cache");
-BRPC_VALIDATE_GFLAG(raft_max_append_entries_cache_size, ::brpc::PositiveInteger);
+BRPC_VALIDATE_GFLAG(raft_max_append_entries_cache_size,
+                    ::brpc::PositiveInteger);
 
 DEFINE_int64(raft_append_entry_high_lat_us, 1000 * 1000,
              "append entry high latency us");
@@ -72,8 +75,9 @@ BRPC_VALIDATE_GFLAG(raft_rpc_channel_connect_timeout_ms, brpc::PositiveInteger);
 
 DECLARE_bool(raft_enable_leader_lease);
 
-DEFINE_bool(raft_enable_witness_to_leader, false, 
-            "enable witness temporarily to become leader when leader down accidently");
+DEFINE_bool(
+    raft_enable_witness_to_leader, false,
+    "enable witness temporarily to become leader when leader down accidently");
 
 #ifndef UNIT_TEST
 static bvar::Adder<int64_t> g_num_nodes("raft_node_count");
@@ -83,7 +87,7 @@ bvar::Adder<int64_t> g_num_nodes("raft_node_count");
 #endif
 
 static bvar::CounterRecorder g_apply_tasks_batch_counter(
-        "raft_apply_tasks_batch_counter");
+    "raft_apply_tasks_batch_counter");
 
 int SnapshotTimer::adjust_timeout_ms(int timeout_ms) {
     if (!_first_schedule) {
@@ -97,7 +101,7 @@ int SnapshotTimer::adjust_timeout_ms(int timeout_ms) {
 }
 
 class ConfigurationChangeDone : public Closure {
-public:
+   public:
     void Run() {
         if (status().ok()) {
             _node->on_configuration_change_done(_term);
@@ -108,21 +112,21 @@ public:
         }
         delete this;
     }
-private:
-    ConfigurationChangeDone(
-            NodeImpl* node, int64_t term, bool leader_start, int64_t lease_epoch)
-        : _node(node)
-        , _term(term)
-        , _leader_start(leader_start)
-        , _lease_epoch(lease_epoch)
-    {
+
+   private:
+    ConfigurationChangeDone(NodeImpl* node, int64_t term, bool leader_start,
+                            int64_t lease_epoch)
+        : _node(node),
+          _term(term),
+          _leader_start(leader_start),
+          _lease_epoch(lease_epoch) {
         _node->AddRef();
     }
     ~ConfigurationChangeDone() {
         _node->Release();
         _node = NULL;
     }
-friend class NodeImpl;
+    friend class NodeImpl;
     NodeImpl* _node;
     int64_t _term;
     bool _leader_start;
@@ -134,65 +138,70 @@ inline int random_timeout(int timeout_ms) {
     return butil::fast_rand_in(timeout_ms, timeout_ms + delta);
 }
 
-DEFINE_int32(raft_election_heartbeat_factor, 10, "raft election:heartbeat timeout factor");
+DEFINE_int32(raft_election_heartbeat_factor, 10,
+             "raft election:heartbeat timeout factor");
 static inline int heartbeat_timeout(int election_timeout) {
-    if (FLAGS_raft_election_heartbeat_factor <= 0){
-        LOG(WARNING) << "raft_election_heartbeat_factor flag must be greater than 1"
-                     << ", but get "<< FLAGS_raft_election_heartbeat_factor
-                     << ", it will be set to default value 10.";
+    if (FLAGS_raft_election_heartbeat_factor <= 0) {
+        LOG(WARNING)
+            << "raft_election_heartbeat_factor flag must be greater than 1"
+            << ", but get " << FLAGS_raft_election_heartbeat_factor
+            << ", it will be set to default value 10.";
         FLAGS_raft_election_heartbeat_factor = 10;
     }
-    return std::max(election_timeout / FLAGS_raft_election_heartbeat_factor, 10);
+    return std::max(election_timeout / FLAGS_raft_election_heartbeat_factor,
+                    10);
 }
 
 NodeImpl::NodeImpl(const GroupId& group_id, const PeerId& peer_id)
-    : _state(STATE_UNINITIALIZED)
-    , _current_term(0)
-    , _group_id(group_id)
-    , _server_id(peer_id)
-    , _conf_ctx(this)
-    , _log_storage(NULL)
-    , _meta_storage(NULL)
-    , _closure_queue(NULL)
-    , _config_manager(NULL)
-    , _log_manager(NULL)
-    , _fsm_caller(NULL)
-    , _ballot_box(NULL)
-    , _snapshot_executor(NULL)
-    , _stop_transfer_arg(NULL)
-    , _vote_triggered(false)
-    , _waking_candidate(0)
-    , _append_entries_cache(NULL)
-    , _append_entries_cache_version(0)
-    , _node_readonly(false)
-    , _majority_nodes_readonly(false) {
-    butil::string_printf(&_v_group_id, "%s_%d", _group_id.c_str(), _server_id.idx);
+    : _state(STATE_UNINITIALIZED),
+      _current_term(0),
+      _group_id(group_id),
+      _server_id(peer_id),
+      _conf_ctx(this),
+      _log_storage(NULL),
+      _meta_storage(NULL),
+      _closure_queue(NULL),
+      _config_manager(NULL),
+      _log_manager(NULL),
+      _fsm_caller(NULL),
+      _ballot_box(NULL),
+      _snapshot_executor(NULL),
+      _stop_transfer_arg(NULL),
+      _vote_triggered(false),
+      _waking_candidate(0),
+      _append_entries_cache(NULL),
+      _append_entries_cache_version(0),
+      _node_readonly(false),
+      _majority_nodes_readonly(false) {
+    butil::string_printf(&_v_group_id, "%s_%d", _group_id.c_str(),
+                         _server_id.idx);
     AddRef();
     g_num_nodes << 1;
 }
 
 NodeImpl::NodeImpl()
-    : _state(STATE_UNINITIALIZED)
-    , _current_term(0)
-    , _group_id()
-    , _server_id()
-    , _conf_ctx(this)
-    , _log_storage(NULL)
-    , _meta_storage(NULL)
-    , _closure_queue(NULL)
-    , _config_manager(NULL)
-    , _log_manager(NULL)
-    , _fsm_caller(NULL)
-    , _ballot_box(NULL)
-    , _snapshot_executor(NULL)
-    , _stop_transfer_arg(NULL)
-    , _vote_triggered(false)
-    , _waking_candidate(0)
-    , _append_entries_cache(NULL)
-    , _append_entries_cache_version(0)
-    , _node_readonly(false)
-    , _majority_nodes_readonly(false) {
-    butil::string_printf(&_v_group_id, "%s_%d", _group_id.c_str(), _server_id.idx);
+    : _state(STATE_UNINITIALIZED),
+      _current_term(0),
+      _group_id(),
+      _server_id(),
+      _conf_ctx(this),
+      _log_storage(NULL),
+      _meta_storage(NULL),
+      _closure_queue(NULL),
+      _config_manager(NULL),
+      _log_manager(NULL),
+      _fsm_caller(NULL),
+      _ballot_box(NULL),
+      _snapshot_executor(NULL),
+      _stop_transfer_arg(NULL),
+      _vote_triggered(false),
+      _waking_candidate(0),
+      _append_entries_cache(NULL),
+      _append_entries_cache_version(0),
+      _node_readonly(false),
+      _majority_nodes_readonly(false) {
+    butil::string_printf(&_v_group_id, "%s_%d", _group_id.c_str(),
+                         _server_id.idx);
     AddRef();
     g_num_nodes << 1;
 }
@@ -300,8 +309,8 @@ int NodeImpl::init_meta_storage() {
     _meta_storage = RaftMetaStorage::create(_options.raft_meta_uri);
     if (!_meta_storage) {
         LOG(ERROR) << "node " << _group_id << ":" << _server_id
-                   << " failed to create meta storage, uri " 
-                   << _options.raft_meta_uri; 
+                   << " failed to create meta storage, uri "
+                   << _options.raft_meta_uri;
         return ENOENT;
     }
 
@@ -309,20 +318,18 @@ int NodeImpl::init_meta_storage() {
     butil::Status status = _meta_storage->init();
     if (!status.ok()) {
         LOG(ERROR) << "node " << _group_id << ":" << _server_id
-                   << " failed to init meta storage, uri " 
-                   << _options.raft_meta_uri 
-                   << ", error " << status;
+                   << " failed to init meta storage, uri "
+                   << _options.raft_meta_uri << ", error " << status;
         return status.error_code();
     }
-    
+
     // get term and votedfor
-    status = _meta_storage->
-                get_term_and_votedfor(&_current_term, &_voted_id, _v_group_id);
+    status = _meta_storage->get_term_and_votedfor(&_current_term, &_voted_id,
+                                                  _v_group_id);
     if (!status.ok()) {
         LOG(ERROR) << "node " << _group_id << ":" << _server_id
                    << " failed to get term and voted_id when init meta storage,"
-                   << " uri " << _options.raft_meta_uri 
-                   << ", error " << status;
+                   << " uri " << _options.raft_meta_uri << ", error " << status;
         return status.error_code();
     }
 
@@ -331,19 +338,22 @@ int NodeImpl::init_meta_storage() {
     if (_current_term < last_log_id.term) {
         // Please check when this bad case really happens!
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " init with invalid term: current_term is " << _current_term 
-                     << " but last log term is " << last_log_id.term
+                     << " init with invalid term: current_term is "
+                     << _current_term << " but last log term is "
+                     << last_log_id.term
                      << ". Raft will use a newer term to avoid corner cases";
-        // Increase term by 1 is more safety although it may cause a working 
+        // Increase term by 1 is more safety although it may cause a working
         // Leader to stepdown
         _current_term = last_log_id.term + 1;
         _voted_id.reset();
-        butil::Status status = _meta_storage->
-                set_term_and_votedfor(_current_term, PeerId(), _v_group_id);
+        butil::Status status = _meta_storage->set_term_and_votedfor(
+            _current_term, PeerId(), _v_group_id);
         if (!status.ok()) {
-            LOG(ERROR) << "node " << _group_id << ":" << _server_id
-                       << " fail to set_term_and_votedfor when correct its term,"
-                          " error: " << status;
+            LOG(ERROR)
+                << "node " << _group_id << ":" << _server_id
+                << " fail to set_term_and_votedfor when correct its term,"
+                   " error: "
+                << status;
             return status.error_code();
         }
     }
@@ -362,7 +372,6 @@ void NodeImpl::handle_snapshot_timeout() {
     lck.unlock();
     // TODO: do_snapshot in another thread to avoid blocking the timer thread.
     do_snapshot(NULL);
-
 }
 
 int NodeImpl::init_fsm_caller(const LogId& bootstrap_id) {
@@ -388,22 +397,21 @@ int NodeImpl::init_fsm_caller(const LogId& bootstrap_id) {
 }
 
 class BootstrapStableClosure : public LogManager::StableClosure {
-public:
+   public:
     void Run() { _done.Run(); }
     void wait() { _done.wait(); }
-private:
+
+   private:
     SynchronizedClosure _done;
 };
 
 int NodeImpl::bootstrap(const BootstrapOptions& options) {
-
     if (options.last_log_index > 0) {
         if (options.group_conf.empty() || options.fsm == NULL) {
             LOG(ERROR) << "Invalid arguments for " << __FUNCTION__
                        << "group_conf=" << options.group_conf
                        << " fsm=" << options.fsm
-                       << " while last_log_index="
-                       << options.last_log_index;
+                       << " while last_log_index=" << options.last_log_index;
             return -1;
         }
     }
@@ -440,12 +448,13 @@ int NodeImpl::bootstrap(const BootstrapOptions& options) {
     }
     if (_current_term == 0) {
         _current_term = 1;
-        butil::Status status = _meta_storage->
-                                set_term_and_votedfor(1, PeerId(), _v_group_id);
+        butil::Status status =
+            _meta_storage->set_term_and_votedfor(1, PeerId(), _v_group_id);
         if (!status.ok()) {
-            // TODO add group_id 
+            // TODO add group_id
             LOG(ERROR) << "Fail to set term and votedfor when bootstrap,"
-                          " error: " << status;
+                          " error: "
+                       << status;
             return -1;
         }
         return -1;
@@ -466,8 +475,8 @@ int NodeImpl::bootstrap(const BootstrapOptions& options) {
         _snapshot_executor->do_snapshot(&done);
         done.wait();
         if (!done.status().ok()) {
-            LOG(ERROR) << "Fail to save snapshot " << done.status()
-                       << " from " << _options.snapshot_uri;
+            LOG(ERROR) << "Fail to save snapshot " << done.status() << " from "
+                       << _options.snapshot_uri;
             return -1;
         }
     }
@@ -499,28 +508,31 @@ int NodeImpl::init(const NodeOptions& options) {
 
     // check _server_id
     if (butil::IP_ANY == _server_id.addr.ip) {
-        LOG(ERROR) << "Group " << _group_id 
+        LOG(ERROR) << "Group " << _group_id
                    << " Node can't started from IP_ANY";
         return -1;
     }
 
     if (!global_node_manager->server_exists(_server_id.addr)) {
-        LOG(ERROR) << "Group " << _group_id
-                   << " No RPC Server attached to " << _server_id.addr
+        LOG(ERROR) << "Group " << _group_id << " No RPC Server attached to "
+                   << _server_id.addr
                    << ", did you forget to call braft::add_service()?";
         return -1;
     }
     if (options.witness) {
-        // When this node is a witness, set the election_timeout to be twice 
+        // When this node is a witness, set the election_timeout to be twice
         // of the normal replica to ensure that the normal replica has a higher
         // priority and is selected as the master
         if (FLAGS_raft_enable_witness_to_leader) {
-            CHECK_EQ(0, _election_timer.init(this, options.election_timeout_ms * 2));
-            CHECK_EQ(0, _vote_timer.init(this, options.election_timeout_ms * 2 + options.max_clock_drift_ms));
+            CHECK_EQ(
+                0, _election_timer.init(this, options.election_timeout_ms * 2));
+            CHECK_EQ(0, _vote_timer.init(this, options.election_timeout_ms * 2 +
+                                                   options.max_clock_drift_ms));
         }
     } else {
         CHECK_EQ(0, _election_timer.init(this, options.election_timeout_ms));
-        CHECK_EQ(0, _vote_timer.init(this, options.election_timeout_ms + options.max_clock_drift_ms));
+        CHECK_EQ(0, _vote_timer.init(this, options.election_timeout_ms +
+                                               options.max_clock_drift_ms));
     }
     CHECK_EQ(0, _stepdown_timer.init(this, options.election_timeout_ms));
     CHECK_EQ(0, _snapshot_timer.init(this, options.snapshot_interval_s * 1000));
@@ -529,7 +541,7 @@ int NodeImpl::init(const NodeOptions& options) {
 
     if (bthread::execution_queue_start(&_apply_queue_id, NULL,
                                        execute_applying_tasks, this) != 0) {
-        LOG(ERROR) << "node " << _group_id << ":" << _server_id 
+        LOG(ERROR) << "node " << _group_id << ":" << _server_id
                    << " fail to start execution_queue";
         return -1;
     }
@@ -546,9 +558,11 @@ int NodeImpl::init(const NodeOptions& options) {
 
     _leader_lease.init(options.election_timeout_ms);
     if (options.witness) {
-        _follower_lease.init(options.election_timeout_ms * 2, options.max_clock_drift_ms);
+        _follower_lease.init(options.election_timeout_ms * 2,
+                             options.max_clock_drift_ms);
     } else {
-        _follower_lease.init(options.election_timeout_ms, options.max_clock_drift_ms);
+        _follower_lease.init(options.election_timeout_ms,
+                             options.max_clock_drift_ms);
     }
 
     // log storage and log manager init
@@ -576,8 +590,10 @@ int NodeImpl::init(const NodeOptions& options) {
     }
 
     // snapshot storage init and load
-    // NOTE: snapshot maybe discard entries when snapshot saved but not discard entries.
-    //      init log storage before snapshot storage, snapshot storage will update configration
+    // NOTE: snapshot maybe discard entries when snapshot saved but not discard
+    // entries.
+    //      init log storage before snapshot storage, snapshot storage will
+    //      update configration
     if (init_snapshot_storage() != 0) {
         LOG(ERROR) << "node " << _group_id << ":" << _server_id
                    << " init_snapshot_storage failed";
@@ -587,8 +603,7 @@ int NodeImpl::init(const NodeOptions& options) {
     butil::Status st = _log_manager->check_consistency();
     if (!st.ok()) {
         LOG(ERROR) << "node " << _group_id << ":" << _server_id
-                   << " is initialized with inconsitency log: "
-                   << st;
+                   << " is initialized with inconsitency log: " << st;
         return -1;
     }
 
@@ -599,7 +614,7 @@ int NodeImpl::init(const NodeOptions& options) {
     } else {
         _conf.conf = _options.initial_conf;
     }
-    
+
     // init meta and check term
     if (init_meta_storage() != 0) {
         LOG(ERROR) << "node " << _group_id << ":" << _server_id
@@ -614,17 +629,16 @@ int NodeImpl::init(const NodeOptions& options) {
 
     // init replicator
     ReplicatorGroupOptions rg_options;
-    rg_options.heartbeat_timeout_ms = heartbeat_timeout(_options.election_timeout_ms);
+    rg_options.heartbeat_timeout_ms =
+        heartbeat_timeout(_options.election_timeout_ms);
     rg_options.election_timeout_ms = _options.election_timeout_ms;
     rg_options.log_manager = _log_manager;
     rg_options.ballot_box = _ballot_box;
     rg_options.node = this;
-    rg_options.snapshot_throttle = _options.snapshot_throttle
-        ? _options.snapshot_throttle->get()
-        : NULL;
-    rg_options.snapshot_storage = _snapshot_executor
-        ? _snapshot_executor->snapshot_storage()
-        : NULL;
+    rg_options.snapshot_throttle =
+        _options.snapshot_throttle ? _options.snapshot_throttle->get() : NULL;
+    rg_options.snapshot_storage =
+        _snapshot_executor ? _snapshot_executor->snapshot_storage() : NULL;
     _replicator_group.init(NodeId(_group_id, _server_id), rg_options);
 
     // set state to follower
@@ -633,13 +647,12 @@ int NodeImpl::init(const NodeOptions& options) {
     LOG(INFO) << "node " << _group_id << ":" << _server_id << " init,"
               << " term: " << _current_term
               << " last_log_id: " << _log_manager->last_log_id()
-              << " conf: " << _conf.conf
-              << " old_conf: " << _conf.old_conf;
+              << " conf: " << _conf.conf << " old_conf: " << _conf.old_conf;
 
     // start snapshot timer
     if (_snapshot_executor && _options.snapshot_interval_s > 0) {
-        BRAFT_VLOG << "node " << _group_id << ":" << _server_id
-                   << " term " << _current_term << " start snapshot_timer";
+        BRAFT_VLOG << "node " << _group_id << ":" << _server_id << " term "
+                   << _current_term << " start snapshot_timer";
         _snapshot_timer.start();
     }
 
@@ -649,16 +662,16 @@ int NodeImpl::init(const NodeOptions& options) {
 
     // add node to NodeManager
     if (!global_node_manager->add(this)) {
-        LOG(ERROR) << "NodeManager add " << _group_id 
-                   << ":" << _server_id << " failed";
+        LOG(ERROR) << "NodeManager add " << _group_id << ":" << _server_id
+                   << " failed";
         return -1;
     }
 
     // Now the raft node is started , have to acquire the lock to avoid race
     // conditions
     std::unique_lock<raft_mutex_t> lck(_mutex);
-    if (_conf.stable() && _conf.conf.size() == 1u
-            && _conf.conf.contains(_server_id)) {
+    if (_conf.stable() && _conf.conf.size() == 1u &&
+        _conf.conf.contains(_server_id)) {
         // The group contains only this server which must be the LEADER, trigger
         // the timer immediately.
         elect_self(&lck);
@@ -667,12 +680,13 @@ int NodeImpl::init(const NodeOptions& options) {
     return 0;
 }
 
-DEFINE_int32(raft_apply_batch, 32, "Max number of tasks that can be applied "
-                                   " in a single batch");
+DEFINE_int32(raft_apply_batch, 32,
+             "Max number of tasks that can be applied "
+             " in a single batch");
 BRPC_VALIDATE_GFLAG(raft_apply_batch, ::brpc::PositiveInteger);
 
 int NodeImpl::execute_applying_tasks(
-        void* meta, bthread::TaskIterator<LogEntryAndClosure>& iter) {
+    void* meta, bthread::TaskIterator<LogEntryAndClosure>& iter) {
     if (iter.is_queue_stopped()) {
         return 0;
     }
@@ -725,13 +739,10 @@ void NodeImpl::on_configuration_change_done(int64_t term) {
 }
 
 class OnCaughtUp : public CatchupClosure {
-public:
-    OnCaughtUp(NodeImpl* node, int64_t term, const PeerId& peer, int64_t version)
-        : _node(node)
-        , _term(term)
-        , _peer(peer)
-        , _version(version)
-    {
+   public:
+    OnCaughtUp(NodeImpl* node, int64_t term, const PeerId& peer,
+               int64_t version)
+        : _node(node), _term(term), _peer(peer), _version(version) {
         _node->AddRef();
     }
     ~OnCaughtUp() {
@@ -744,22 +755,24 @@ public:
         _node->on_caughtup(_peer, _term, _version, status());
         delete this;
     };
-private:
+
+   private:
     NodeImpl* _node;
     int64_t _term;
     PeerId _peer;
     int64_t _version;
 };
 
-void NodeImpl::on_caughtup(const PeerId& peer, int64_t term,
-                           int64_t version, const butil::Status& st) {
+void NodeImpl::on_caughtup(const PeerId& peer, int64_t term, int64_t version,
+                           const butil::Status& st) {
     BAIDU_SCOPED_LOCK(_mutex);
     // CHECK _state and _current_term to avoid ABA problem
     if (_state != STATE_LEADER || term != _current_term) {
-        // if leader stepped down, reset() has already been called in step_down(),
-        // so nothing needs to be done here
-        LOG(WARNING) << "node " << node_id() << " stepped down when waiting peer "
-                     << peer << " to catch up, current state is " << state2str(_state)
+        // if leader stepped down, reset() has already been called in
+        // step_down(), so nothing needs to be done here
+        LOG(WARNING) << "node " << node_id()
+                     << " stepped down when waiting peer " << peer
+                     << " to catch up, current state is " << state2str(_state)
                      << ", current term is " << _current_term
                      << ", expect term is " << term;
         return;
@@ -771,24 +784,24 @@ void NodeImpl::on_caughtup(const PeerId& peer, int64_t term,
     }
 
     // Retry if this peer is still alive
-    if (st.error_code() == ETIMEDOUT 
-            && (butil::monotonic_time_ms()
-                - _replicator_group.last_rpc_send_timestamp(peer))
-                    <= _options.election_timeout_ms) {
+    if (st.error_code() == ETIMEDOUT &&
+        (butil::monotonic_time_ms() -
+         _replicator_group.last_rpc_send_timestamp(peer)) <=
+            _options.election_timeout_ms) {
+        LOG(INFO) << "node " << _group_id << ":" << _server_id << " waits peer "
+                  << peer << " to catch up";
 
-        LOG(INFO) << "node " << _group_id << ":" << _server_id
-                  << " waits peer " << peer << " to catch up";
+        OnCaughtUp* caught_up =
+            new OnCaughtUp(this, _current_term, peer, version);
+        timespec due_time =
+            butil::milliseconds_from_now(_options.get_catchup_timeout_ms());
 
-        OnCaughtUp* caught_up = new OnCaughtUp(this, _current_term, peer, version);
-        timespec due_time = butil::milliseconds_from_now(
-                _options.get_catchup_timeout_ms());
-
-        if (0 == _replicator_group.wait_caughtup(
-                    peer, _options.catchup_margin, &due_time, caught_up)) {
+        if (0 == _replicator_group.wait_caughtup(peer, _options.catchup_margin,
+                                                 &due_time, caught_up)) {
             return;
         } else {
             LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                << " wait_caughtup failed, peer " << peer;
+                         << " wait_caughtup failed, peer " << peer;
             delete caught_up;
         }
     }
@@ -807,8 +820,8 @@ void NodeImpl::check_dead_nodes(const Configuration& conf, int64_t now_ms) {
             continue;
         }
 
-        if (now_ms - _replicator_group.last_rpc_send_timestamp(peers[i])
-                <= _options.election_timeout_ms) {
+        if (now_ms - _replicator_group.last_rpc_send_timestamp(peers[i]) <=
+            _options.election_timeout_ms) {
             ++alive_count;
             continue;
         }
@@ -817,11 +830,10 @@ void NodeImpl::check_dead_nodes(const Configuration& conf, int64_t now_ms) {
     if (alive_count >= peers.size() / 2 + 1) {
         return;
     }
-    LOG(WARNING) << "node " << node_id()
-                 << " term " << _current_term
+    LOG(WARNING) << "node " << node_id() << " term " << _current_term
                  << " steps down when alive nodes don't satisfy quorum"
-                    " dead_nodes: " << dead_nodes
-                 << " conf: " << conf;
+                    " dead_nodes: "
+                 << dead_nodes << " conf: " << conf;
     butil::Status status;
     status.set_error(ERAFTTIMEDOUT, "Majority of the group dies");
     step_down(_current_term, false, status);
@@ -832,9 +844,9 @@ void NodeImpl::handle_stepdown_timeout() {
 
     // check state
     if (_state > STATE_TRANSFERRING) {
-        BRAFT_VLOG << "node " << _group_id << ":" << _server_id
-            << " term " << _current_term << " stop stepdown_timer"
-            << " state is " << state2str(_state);
+        BRAFT_VLOG << "node " << _group_id << ":" << _server_id << " term "
+                   << _current_term << " stop stepdown_timer"
+                   << " state is " << state2str(_state);
         return;
     }
     check_witness(_conf.conf);
@@ -847,12 +859,13 @@ void NodeImpl::handle_stepdown_timeout() {
 
 void NodeImpl::check_witness(const Configuration& conf) {
     if (is_witness()) {
-        LOG(WARNING) << "node " << node_id()
-                << " term " << _current_term
-                << " steps down as it's a witness but become leader temporarily"
-                << " conf: " << conf;
+        LOG(WARNING)
+            << "node " << node_id() << " term " << _current_term
+            << " steps down as it's a witness but become leader temporarily"
+            << " conf: " << conf;
         butil::Status status;
-        status.set_error(ETRANSFERLEADERSHIP, "Witness becomes leader temporarily");
+        status.set_error(ETRANSFERLEADERSHIP,
+                         "Witness becomes leader temporarily");
         step_down(_current_term, true, status);
     }
 }
@@ -861,9 +874,10 @@ void NodeImpl::unsafe_register_conf_change(const Configuration& old_conf,
                                            const Configuration& new_conf,
                                            Closure* done) {
     if (_state != STATE_LEADER) {
-        LOG(WARNING) << "[" << node_id()
-                     << "] Refusing configuration changing because the state is "
-                     << state2str(_state) ;
+        LOG(WARNING)
+            << "[" << node_id()
+            << "] Refusing configuration changing because the state is "
+            << state2str(_state);
         if (done) {
             if (_state == STATE_TRANSFERRING) {
                 done->status().set_error(EBUSY, "Is transferring leadership");
@@ -880,7 +894,8 @@ void NodeImpl::unsafe_register_conf_change(const Configuration& old_conf,
         LOG(WARNING) << "[" << node_id()
                      << " ] Refusing concurrent configuration changing";
         if (done) {
-            done->status().set_error(EBUSY, "Doing another configuration change");
+            done->status().set_error(EBUSY,
+                                     "Doing another configuration change");
             run_closure_in_bthread(done);
         }
         return;
@@ -927,18 +942,20 @@ butil::Status NodeImpl::reset_peers(const Configuration& new_peers) {
     BAIDU_SCOPED_LOCK(_mutex);
 
     if (new_peers.empty()) {
-        LOG(WARNING) << "node " << _group_id << ":" << _server_id << " set empty peers";
+        LOG(WARNING) << "node " << _group_id << ":" << _server_id
+                     << " set empty peers";
         return butil::Status(EINVAL, "new_peers is empty");
     }
     // check state
     if (!is_active_state(_state)) {
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " is in state " << state2str(_state) << ", can't reset_peer";
+                     << " is in state " << state2str(_state)
+                     << ", can't reset_peer";
         return butil::Status(EPERM, "Bad state %s", state2str(_state));
     }
     // check bootstrap
     if (_conf.conf.empty()) {
-        LOG(INFO) << "node " << _group_id << ":" << _server_id 
+        LOG(INFO) << "node " << _group_id << ":" << _server_id
                   << " reset_peers to " << new_peers << " from empty";
         _conf.conf = new_peers;
         butil::Status status;
@@ -960,9 +977,8 @@ butil::Status NodeImpl::reset_peers(const Configuration& new_peers) {
     }
 
     Configuration new_conf(new_peers);
-    LOG(WARNING) << "node " << _group_id << ":" << _server_id 
-                 << " set_peer from "
-                 << _conf.conf << " to " << new_conf;
+    LOG(WARNING) << "node " << _group_id << ":" << _server_id
+                 << " set_peer from " << _conf.conf << " to " << new_conf;
     // change conf and step_down
     _conf.conf = new_conf;
     _conf.old_conf.reset();
@@ -972,12 +988,10 @@ butil::Status NodeImpl::reset_peers(const Configuration& new_peers) {
     return butil::Status::OK();
 }
 
-void NodeImpl::snapshot(Closure* done) {
-    do_snapshot(done);
-}
+void NodeImpl::snapshot(Closure* done) { do_snapshot(done); }
 
 void NodeImpl::do_snapshot(Closure* done) {
-    LOG(INFO) << "node " << _group_id << ":" << _server_id 
+    LOG(INFO) << "node " << _group_id << ":" << _server_id
               << " starts to do snapshot";
     if (_snapshot_executor) {
         _snapshot_executor->do_snapshot(done);
@@ -995,8 +1009,10 @@ void NodeImpl::shutdown(Closure* done) {
     {
         BAIDU_SCOPED_LOCK(_mutex);
 
-        LOG(INFO) << "node " << _group_id << ":" << _server_id << " shutdown,"
-            " current_term " << _current_term << " state " << state2str(_state);
+        LOG(INFO) << "node " << _group_id << ":" << _server_id
+                  << " shutdown,"
+                     " current_term "
+                  << _current_term << " state " << state2str(_state);
 
         if (_state < STATE_SHUTTING) {  // Got the right to shut
             // Remove node from NodeManager and |this| would not be accessed by
@@ -1028,9 +1044,10 @@ void NodeImpl::shutdown(Closure* done) {
                 _snapshot_executor->shutdown();
             }
 
-            // step_down will call _commitment_manager->clear_pending_applications(),
-            // this can avoid send LogEntry with closure to fsm_caller.
-            // fsm_caller shutdown will not leak user's closure.
+            // step_down will call
+            // _commitment_manager->clear_pending_applications(), this can avoid
+            // send LogEntry with closure to fsm_caller. fsm_caller shutdown
+            // will not leak user's closure.
             if (_fsm_caller) {
                 _fsm_caller->shutdown();
             }
@@ -1077,7 +1094,6 @@ void NodeImpl::handle_election_timeout() {
 
     // Trigger vote manually, or wait until follower lease expire.
     if (!_vote_triggered && !_follower_lease.expired()) {
-
         return;
     }
     bool triggered = _vote_triggered;
@@ -1087,7 +1103,7 @@ void NodeImpl::handle_election_timeout() {
     PeerId empty_id;
     butil::Status status;
     status.set_error(ERAFTTIMEDOUT, "Lost connection from leader %s",
-                                    _leader_id.to_string().c_str());
+                     _leader_id.to_string().c_str());
     reset_leader_id(empty_id, status);
 
     return pre_vote(&lck, triggered);
@@ -1104,7 +1120,8 @@ void NodeImpl::handle_timeout_now_request(brpc::Controller* controller,
         const int64_t saved_current_term = _current_term;
         if (request->term() > _current_term) {
             butil::Status status;
-            status.set_error(EHIGHERTERMREQUEST, "Raft node receives higher term request.");
+            status.set_error(EHIGHERTERMREQUEST,
+                             "Raft node receives higher term request.");
             step_down(request->term(), false, status);
         }
         response->set_term(_current_term);
@@ -1112,8 +1129,8 @@ void NodeImpl::handle_timeout_now_request(brpc::Controller* controller,
         lck.unlock();
         LOG(INFO) << "node " << _group_id << ":" << _server_id
                   << " received handle_timeout_now_request while _current_term="
-                  << saved_current_term << " didn't match request_term="
-                  << request->term();
+                  << saved_current_term
+                  << " didn't match request_term=" << request->term();
         return;
     }
     if (_state != STATE_FOLLOWER) {
@@ -1123,7 +1140,7 @@ void NodeImpl::handle_timeout_now_request(brpc::Controller* controller,
         response->set_success(false);
         lck.unlock();
         LOG(INFO) << "node " << _group_id << ":" << _server_id
-                  << " received handle_timeout_now_request while state is " 
+                  << " received handle_timeout_now_request while state is "
                   << state2str(saved_state) << " at term=" << saved_term;
         return;
     }
@@ -1149,21 +1166,19 @@ void NodeImpl::handle_timeout_now_request(brpc::Controller* controller,
     // Note: don't touch controller, request, response, done anymore since they
     // were dereferenced at this point
     LOG(INFO) << "node " << _group_id << ":" << _server_id
-              << " received handle_timeout_now_request from "
-              << remote_side << " at term=" << saved_term;
-
+              << " received handle_timeout_now_request from " << remote_side
+              << " at term=" << saved_term;
 }
 
 class StopTransferArg {
-DISALLOW_COPY_AND_ASSIGN(StopTransferArg);
-public:
+    DISALLOW_COPY_AND_ASSIGN(StopTransferArg);
+
+   public:
     StopTransferArg(NodeImpl* n, int64_t t, const PeerId& p)
         : node(n), term(t), peer(p) {
         node->AddRef();
     }
-    ~StopTransferArg() {
-        node->Release();
-    }
+    ~StopTransferArg() { node->Release(); }
     NodeImpl* node;
     int64_t term;
     PeerId peer;
@@ -1176,8 +1191,9 @@ void on_transfer_timeout(void* arg) {
 }
 
 void NodeImpl::handle_transfer_timeout(int64_t term, const PeerId& peer) {
-    LOG(INFO) << "node " << node_id()  << " failed to transfer leadership to peer="
-              << peer << " : reached timeout";
+    LOG(INFO) << "node " << node_id()
+              << " failed to transfer leadership to peer=" << peer
+              << " : reached timeout";
     BAIDU_SCOPED_LOCK(_mutex);
     if (term == _current_term) {
         _replicator_group.stop_transfer_leadership(peer);
@@ -1202,14 +1218,13 @@ int NodeImpl::transfer_leadership_to(const PeerId& peer) {
         // TimeoutNowRequest and increase the term while somehow another leader
         // which was not replicated with the newest configuration has been
         // elected. If no add_peer with this very |peer| is to be invoked ever
-        // after nor this peer is to be killed, this peer will spin in the voting
-        // procedure and make the each new leader stepped down when the peer
-        // reached vote timedout and it starts to vote (because it will increase
-        // the term of the group)
-        // To make things simple, refuse the operation and force users to
-        // invoke transfer_leadership_to after configuration changing is
-        // completed so that the peer's configuration is up-to-date when it 
-        // receives the TimeOutNowRequest.
+        // after nor this peer is to be killed, this peer will spin in the
+        // voting procedure and make the each new leader stepped down when the
+        // peer reached vote timedout and it starts to vote (because it will
+        // increase the term of the group) To make things simple, refuse the
+        // operation and force users to invoke transfer_leadership_to after
+        // configuration changing is completed so that the peer's configuration
+        // is up-to-date when it receives the TimeOutNowRequest.
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
                      << " refused to transfer leadership to peer " << peer
                      << " when the leader is changing the configuration";
@@ -1218,17 +1233,18 @@ int NodeImpl::transfer_leadership_to(const PeerId& peer) {
 
     PeerId peer_id = peer;
     // if peer_id is ANY_PEER(0.0.0.0:0:0), the peer with the largest
-    // last_log_id will be selected. 
+    // last_log_id will be selected.
     if (peer_id == ANY_PEER) {
         LOG(INFO) << "node " << _group_id << ":" << _server_id
                   << " starts to transfer leadership to any peer.";
-        // find the next candidate which is the most possible to become new leader
+        // find the next candidate which is the most possible to become new
+        // leader
         if (_replicator_group.find_the_next_candidate(&peer_id, _conf) != 0) {
-            return -1;    
+            return -1;
         }
     }
     if (peer_id == _server_id) {
-        LOG(INFO) << "node " << _group_id << ":" << _server_id  
+        LOG(INFO) << "node " << _group_id << ":" << _server_id
                   << " transfering leadership to self";
         return 0;
     }
@@ -1239,34 +1255,39 @@ int NodeImpl::transfer_leadership_to(const PeerId& peer) {
         return EINVAL;
     }
     const int64_t last_log_index = _log_manager->last_log_index();
-    const int rc = _replicator_group.transfer_leadership_to(peer_id, last_log_index);
+    const int rc =
+        _replicator_group.transfer_leadership_to(peer_id, last_log_index);
     if (rc != 0) {
         if (rc == EINVAL) {
             LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " fail to transfer leadership, no such peer=" << peer_id;
+                         << " fail to transfer leadership, no such peer="
+                         << peer_id;
         } else if (rc == EHOSTUNREACH) {
             LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " fail to transfer leadership, peer=" << peer_id
-                     << " whose consecutive_error_times not 0.";
+                         << " fail to transfer leadership, peer=" << peer_id
+                         << " whose consecutive_error_times not 0.";
         } else {
             LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " fail to transfer leadership, peer=" << peer_id
-                     << " err: " << berror(rc);
+                         << " fail to transfer leadership, peer=" << peer_id
+                         << " err: " << berror(rc);
         }
         return rc;
     }
     _state = STATE_TRANSFERRING;
     butil::Status status;
-    status.set_error(ETRANSFERLEADERSHIP, "Raft leader is transferring "
-            "leadership to %s", peer_id.to_string().c_str());
+    status.set_error(ETRANSFERLEADERSHIP,
+                     "Raft leader is transferring "
+                     "leadership to %s",
+                     peer_id.to_string().c_str());
     _leader_lease.on_leader_stop();
     _fsm_caller->on_leader_stop(status);
     LOG(INFO) << "node " << _group_id << ":" << _server_id
               << " starts to transfer leadership to " << peer_id;
     _stop_transfer_arg = new StopTransferArg(this, _current_term, peer_id);
-    if (bthread_timer_add(&_transfer_timer,
-                       butil::milliseconds_from_now(_options.election_timeout_ms),
-                       on_transfer_timeout, _stop_transfer_arg) != 0) {
+    if (bthread_timer_add(
+            &_transfer_timer,
+            butil::milliseconds_from_now(_options.election_timeout_ms),
+            on_transfer_timeout, _stop_transfer_arg) != 0) {
         lck.unlock();
         LOG(ERROR) << "Fail to add timer";
         on_transfer_timeout(_stop_transfer_arg);
@@ -1280,11 +1301,14 @@ butil::Status NodeImpl::vote(int election_timeout_ms) {
     if (_state != STATE_FOLLOWER) {
         return butil::Status(EPERM, "is not follower");
     }
-    int max_election_timeout_ms = _options.max_clock_drift_ms + _options.election_timeout_ms;
+    int max_election_timeout_ms =
+        _options.max_clock_drift_ms + _options.election_timeout_ms;
     if (election_timeout_ms > max_election_timeout_ms) {
-        return butil::Status(EINVAL, "election_timeout_ms larger than safety threshold");
+        return butil::Status(
+            EINVAL, "election_timeout_ms larger than safety threshold");
     }
-    election_timeout_ms = std::min(election_timeout_ms, max_election_timeout_ms);
+    election_timeout_ms =
+        std::min(election_timeout_ms, max_election_timeout_ms);
     int max_clock_drift_ms = max_election_timeout_ms - election_timeout_ms;
     unsafe_reset_election_timeout_ms(election_timeout_ms, max_clock_drift_ms);
     _vote_triggered = true;
@@ -1292,29 +1316,36 @@ butil::Status NodeImpl::vote(int election_timeout_ms) {
     const State saved_state = _state;
     lck.unlock();
 
-    LOG(INFO) << "node " << _group_id << ":" << _server_id << " trigger-vote,"
-        " current_term " << saved_current_term << " state " << state2str(saved_state) <<
-        " election_timeout " << election_timeout_ms;
+    LOG(INFO) << "node " << _group_id << ":" << _server_id
+              << " trigger-vote,"
+                 " current_term "
+              << saved_current_term << " state " << state2str(saved_state)
+              << " election_timeout " << election_timeout_ms;
     return butil::Status();
 }
 
 butil::Status NodeImpl::reset_election_timeout_ms(int election_timeout_ms) {
     std::unique_lock<raft_mutex_t> lck(_mutex);
-    int max_election_timeout_ms = _options.max_clock_drift_ms + _options.election_timeout_ms;
+    int max_election_timeout_ms =
+        _options.max_clock_drift_ms + _options.election_timeout_ms;
     if (election_timeout_ms > max_election_timeout_ms) {
-        return butil::Status(EINVAL, "election_timeout_ms larger than safety threshold");
+        return butil::Status(
+            EINVAL, "election_timeout_ms larger than safety threshold");
     }
-    election_timeout_ms = std::min(election_timeout_ms, max_election_timeout_ms);
+    election_timeout_ms =
+        std::min(election_timeout_ms, max_election_timeout_ms);
     int max_clock_drift_ms = max_election_timeout_ms - election_timeout_ms;
     unsafe_reset_election_timeout_ms(election_timeout_ms, max_clock_drift_ms);
     const int64_t saved_current_term = _current_term;
     const State saved_state = _state;
     lck.unlock();
 
-    LOG(INFO) << "node " << _group_id << ":" << _server_id << " reset_election_timeout,"
-        " current_term " << saved_current_term << " state " << state2str(saved_state) <<
-        " new election_timeout " << election_timeout_ms << " new clock_drift_ms " <<
-        max_clock_drift_ms;
+    LOG(INFO) << "node " << _group_id << ":" << _server_id
+              << " reset_election_timeout,"
+                 " current_term "
+              << saved_current_term << " state " << state2str(saved_state)
+              << " new election_timeout " << election_timeout_ms
+              << " new clock_drift_ms " << max_clock_drift_ms;
     return butil::Status();
 }
 
@@ -1326,10 +1357,12 @@ void NodeImpl::reset_election_timeout_ms(int election_timeout_ms,
     const State saved_state = _state;
     lck.unlock();
 
-   LOG(INFO) << "node " << _group_id << ":" << _server_id << " reset_election_timeout,"
-        " current_term " << saved_current_term << " state " << state2str(saved_state) <<
-        " new election_timeout " << election_timeout_ms << " new clock_drift_ms " <<
-        max_clock_drift_ms;
+    LOG(INFO) << "node " << _group_id << ":" << _server_id
+              << " reset_election_timeout,"
+                 " current_term "
+              << saved_current_term << " state " << state2str(saved_state)
+              << " new election_timeout " << election_timeout_ms
+              << " new clock_drift_ms " << max_clock_drift_ms;
 }
 
 void NodeImpl::unsafe_reset_election_timeout_ms(int election_timeout_ms,
@@ -1337,15 +1370,18 @@ void NodeImpl::unsafe_reset_election_timeout_ms(int election_timeout_ms,
     _options.election_timeout_ms = election_timeout_ms;
     _options.max_clock_drift_ms = max_clock_drift_ms;
     _replicator_group.reset_heartbeat_interval(
-            heartbeat_timeout(_options.election_timeout_ms));
-    _replicator_group.reset_election_timeout_interval(_options.election_timeout_ms);
+        heartbeat_timeout(_options.election_timeout_ms));
+    _replicator_group.reset_election_timeout_interval(
+        _options.election_timeout_ms);
     if (_options.witness && FLAGS_raft_enable_witness_to_leader) {
         _election_timer.reset(election_timeout_ms * 2);
-        _follower_lease.reset_election_timeout_ms(election_timeout_ms * 2, _options.max_clock_drift_ms);
+        _follower_lease.reset_election_timeout_ms(election_timeout_ms * 2,
+                                                  _options.max_clock_drift_ms);
     } else {
         _election_timer.reset(election_timeout_ms);
         _leader_lease.reset_election_timeout_ms(election_timeout_ms);
-        _follower_lease.reset_election_timeout_ms(election_timeout_ms, _options.max_clock_drift_ms);
+        _follower_lease.reset_election_timeout_ms(election_timeout_ms,
+                                                  _options.max_clock_drift_ms);
     }
 }
 
@@ -1361,7 +1397,8 @@ void NodeImpl::on_error(const Error& e) {
     // if it is follower, also step down to call on_stop_following
     if (_state <= STATE_FOLLOWER) {
         butil::Status status;
-        status.set_error(EBADNODE, "Raft node(leader or candidate) is in error.");
+        status.set_error(EBADNODE,
+                         "Raft node(leader or candidate) is in error.");
         step_down(_current_term, _state == STATE_LEADER, status);
     }
     if (_state < STATE_ERROR) {
@@ -1375,12 +1412,11 @@ void NodeImpl::handle_vote_timeout() {
 
     // check state
     if (_state != STATE_CANDIDATE) {
-    	return;
+        return;
     }
     if (FLAGS_raft_step_down_when_vote_timedout) {
         // step down to follower
-        LOG(WARNING) << "node " << node_id()
-                     << " term " << _current_term
+        LOG(WARNING) << "node " << node_id() << " term " << _current_term
                      << " steps down when reaching vote timeout:"
                         " fail to get quorum vote-granted";
         butil::Status status;
@@ -1389,15 +1425,15 @@ void NodeImpl::handle_vote_timeout() {
         pre_vote(&lck, false);
     } else {
         // retry vote
-        LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " term " << _current_term << " retry elect";
+        LOG(WARNING) << "node " << _group_id << ":" << _server_id << " term "
+                     << _current_term << " retry elect";
         elect_self(&lck);
     }
 }
 
-void NodeImpl::handle_request_vote_response(const PeerId& peer_id, const int64_t term,
-                                            const int64_t ctx_version,
-                                            const RequestVoteResponse& response) {
+void NodeImpl::handle_request_vote_response(
+    const PeerId& peer_id, const int64_t term, const int64_t ctx_version,
+    const RequestVoteResponse& response) {
     BAIDU_SCOPED_LOCK(_mutex);
 
     if (ctx_version != _vote_ctx.version()) {
@@ -1426,17 +1462,19 @@ void NodeImpl::handle_request_vote_response(const PeerId& peer_id, const int64_t
     if (response.term() > _current_term) {
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
                      << " received invalid RequestVoteResponse from " << peer_id
-                     << " term " << response.term() << " expect " << _current_term;
+                     << " term " << response.term() << " expect "
+                     << _current_term;
         butil::Status status;
-        status.set_error(EHIGHERTERMRESPONSE, "Raft node receives higher term "
-                "request_vote_response.");
+        status.set_error(EHIGHERTERMRESPONSE,
+                         "Raft node receives higher term "
+                         "request_vote_response.");
         step_down(response.term(), false, status);
         return;
     }
 
     LOG(INFO) << "node " << _group_id << ":" << _server_id
-              << " received RequestVoteResponse from " << peer_id
-              << " term " << response.term() << " granted " << response.granted()
+              << " received RequestVoteResponse from " << peer_id << " term "
+              << response.term() << " granted " << response.granted()
               << " rejected_by_lease " << response.rejected_by_lease()
               << " disrupted " << response.disrupted();
     if (!response.granted() && !response.rejected_by_lease()) {
@@ -1444,7 +1482,8 @@ void NodeImpl::handle_request_vote_response(const PeerId& peer_id, const int64_t
     }
 
     if (response.disrupted()) {
-        _vote_ctx.set_disrupted_leader(DisruptedLeader(peer_id, response.previous_term()));
+        _vote_ctx.set_disrupted_leader(
+            DisruptedLeader(peer_id, response.previous_term()));
     }
     if (response.granted()) {
         _vote_ctx.grant(peer_id);
@@ -1478,19 +1517,18 @@ struct OnRequestVoteRPCDone : public google::protobuf::Closure {
         : peer(peer_id_), term(term_), ctx_version(ctx_version_), node(node_) {
         node->AddRef();
     }
-    virtual ~OnRequestVoteRPCDone() {
-        node->Release();
-    }
+    virtual ~OnRequestVoteRPCDone() { node->Release(); }
 
     void Run() {
         do {
             if (cntl.ErrorCode() != 0) {
                 LOG(WARNING) << "node " << node->node_id()
-                             << " received RequestVoteResponse from " << peer 
-	                         << " error: " << cntl.ErrorText();
+                             << " received RequestVoteResponse from " << peer
+                             << " error: " << cntl.ErrorText();
                 break;
             }
-            node->handle_request_vote_response(peer, term, ctx_version, response);
+            node->handle_request_vote_response(peer, term, ctx_version,
+                                               response);
         } while (0);
         delete this;
     }
@@ -1504,7 +1542,8 @@ struct OnRequestVoteRPCDone : public google::protobuf::Closure {
     NodeImpl* node;
 };
 
-void NodeImpl::handle_pre_vote_response(const PeerId& peer_id, const int64_t term,
+void NodeImpl::handle_pre_vote_response(const PeerId& peer_id,
+                                        const int64_t term,
                                         const int64_t ctx_version,
                                         const RequestVoteResponse& response) {
     std::unique_lock<raft_mutex_t> lck(_mutex);
@@ -1521,7 +1560,8 @@ void NodeImpl::handle_pre_vote_response(const PeerId& peer_id, const int64_t ter
     if (_state != STATE_FOLLOWER) {
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
                      << " received invalid PreVoteResponse from " << peer_id
-                     << " state not in STATE_FOLLOWER but " << state2str(_state);
+                     << " state not in STATE_FOLLOWER but "
+                     << state2str(_state);
         return;
     }
     // check stale response
@@ -1535,17 +1575,19 @@ void NodeImpl::handle_pre_vote_response(const PeerId& peer_id, const int64_t ter
     if (response.term() > _current_term) {
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
                      << " received invalid PreVoteResponse from " << peer_id
-                     << " term " << response.term() << " expect " << _current_term;
+                     << " term " << response.term() << " expect "
+                     << _current_term;
         butil::Status status;
-        status.set_error(EHIGHERTERMRESPONSE, "Raft node receives higher term "
-                "pre_vote_response.");
+        status.set_error(EHIGHERTERMRESPONSE,
+                         "Raft node receives higher term "
+                         "pre_vote_response.");
         step_down(response.term(), false, status);
         return;
     }
 
     LOG(INFO) << "node " << _group_id << ":" << _server_id
-              << " received PreVoteResponse from " << peer_id
-              << " term " << response.term() << " granted " << response.granted()
+              << " received PreVoteResponse from " << peer_id << " term "
+              << response.term() << " granted " << response.granted()
               << " rejected_by_lease " << response.rejected_by_lease()
               << " disrupted " << response.disrupted();
 
@@ -1559,7 +1601,8 @@ void NodeImpl::handle_pre_vote_response(const PeerId& peer_id, const int64_t ter
     }
 
     if (response.disrupted()) {
-        _pre_vote_ctx.set_disrupted_leader(DisruptedLeader(peer_id, response.previous_term()));
+        _pre_vote_ctx.set_disrupted_leader(
+            DisruptedLeader(peer_id, response.previous_term()));
     }
     std::set<PeerId> peers;
     if (response.rejected_by_lease()) {
@@ -1572,8 +1615,8 @@ void NodeImpl::handle_pre_vote_response(const PeerId& peer_id, const int64_t ter
         _pre_vote_ctx.pop_grantable_peers(&peers);
         peers.insert(peer_id);
     }
-    for (std::set<PeerId>::const_iterator it = peers.begin();
-            it != peers.end(); ++it) {
+    for (std::set<PeerId>::const_iterator it = peers.begin(); it != peers.end();
+         ++it) {
         _pre_vote_ctx.grant(*it);
         if (*it == _follower_lease.last_leader()) {
             _pre_vote_ctx.grant(_server_id);
@@ -1591,16 +1634,14 @@ struct OnPreVoteRPCDone : public google::protobuf::Closure {
         : peer(peer_id_), term(term_), ctx_version(ctx_version_), node(node_) {
         node->AddRef();
     }
-    virtual ~OnPreVoteRPCDone() {
-        node->Release();
-    }
+    virtual ~OnPreVoteRPCDone() { node->Release(); }
 
     void Run() {
         do {
             if (cntl.ErrorCode() != 0) {
-                LOG(WARNING) << "node " << node->node_id()
-                             << " request PreVote from " << peer 
-                             << " error: " << cntl.ErrorText();
+                LOG(WARNING)
+                    << "node " << node->node_id() << " request PreVote from "
+                    << peer << " error: " << cntl.ErrorText();
                 break;
             }
             node->handle_pre_vote_response(peer, term, ctx_version, response);
@@ -1618,11 +1659,11 @@ struct OnPreVoteRPCDone : public google::protobuf::Closure {
 };
 
 void NodeImpl::pre_vote(std::unique_lock<raft_mutex_t>* lck, bool triggered) {
-    LOG(INFO) << "node " << _group_id << ":" << _server_id
-              << " term " << _current_term << " start pre_vote";
+    LOG(INFO) << "node " << _group_id << ":" << _server_id << " term "
+              << _current_term << " start pre_vote";
     if (_snapshot_executor && _snapshot_executor->is_installing_snapshot()) {
-        LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " term " << _current_term
+        LOG(WARNING) << "node " << _group_id << ":" << _server_id << " term "
+                     << _current_term
                      << " doesn't do pre_vote when installing snapshot as the "
                         " configuration is possibly out of date";
         return;
@@ -1641,7 +1682,8 @@ void NodeImpl::pre_vote(std::unique_lock<raft_mutex_t>* lck, bool triggered) {
     // pre_vote need defense ABA after unlock&lock
     if (old_term != _current_term) {
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " raise term " << _current_term << " when get last_log_id";
+                     << " raise term " << _current_term
+                     << " when get last_log_id";
         return;
     }
 
@@ -1649,8 +1691,8 @@ void NodeImpl::pre_vote(std::unique_lock<raft_mutex_t>* lck, bool triggered) {
     std::set<PeerId> peers;
     _conf.list_peers(&peers);
 
-    for (std::set<PeerId>::const_iterator
-            iter = peers.begin(); iter != peers.end(); ++iter) {
+    for (std::set<PeerId>::const_iterator iter = peers.begin();
+         iter != peers.end(); ++iter) {
         if (*iter == _server_id) {
             continue;
         }
@@ -1666,12 +1708,12 @@ void NodeImpl::pre_vote(std::unique_lock<raft_mutex_t>* lck, bool triggered) {
         }
 
         OnPreVoteRPCDone* done = new OnPreVoteRPCDone(
-                *iter, _current_term, _pre_vote_ctx.version(), this);
+            *iter, _current_term, _pre_vote_ctx.version(), this);
         done->cntl.set_timeout_ms(_options.election_timeout_ms);
         done->request.set_group_id(_group_id);
         done->request.set_server_id(_server_id.to_string());
         done->request.set_peer_id(iter->to_string());
-        done->request.set_term(_current_term + 1); // next term
+        done->request.set_term(_current_term + 1);  // next term
         done->request.set_last_log_index(last_log_id.index);
         done->request.set_last_log_term(last_log_id.term);
 
@@ -1682,10 +1724,10 @@ void NodeImpl::pre_vote(std::unique_lock<raft_mutex_t>* lck, bool triggered) {
 }
 
 // in lock
-void NodeImpl::elect_self(std::unique_lock<raft_mutex_t>* lck, 
+void NodeImpl::elect_self(std::unique_lock<raft_mutex_t>* lck,
                           bool old_leader_stepped_down) {
-    LOG(INFO) << "node " << _group_id << ":" << _server_id
-              << " term " << _current_term << " start vote and grant vote self";
+    LOG(INFO) << "node " << _group_id << ":" << _server_id << " term "
+              << _current_term << " start vote and grant vote self";
     if (_conf.empty()) {
         LOG(WARNING) << "node " << _group_id << ':' << _server_id
                      << " can't do elect_self as _conf is empty";
@@ -1693,8 +1735,8 @@ void NodeImpl::elect_self(std::unique_lock<raft_mutex_t>* lck,
     }
     // cancel follower election timer
     if (_state == STATE_FOLLOWER) {
-        BRAFT_VLOG << "node " << _group_id << ":" << _server_id
-                   << " term " << _current_term << " stop election_timer";
+        BRAFT_VLOG << "node " << _group_id << ":" << _server_id << " term "
+                   << _current_term << " stop election_timer";
         _election_timer.stop();
     }
     // reset leader_id before vote
@@ -1702,21 +1744,23 @@ void NodeImpl::elect_self(std::unique_lock<raft_mutex_t>* lck,
     const int64_t leader_term = _current_term;
     PeerId empty_id;
     butil::Status status;
-    status.set_error(ERAFTTIMEDOUT, "A follower's leader_id is reset to NULL "
-                                    "as it begins to request_vote.");
+    status.set_error(ERAFTTIMEDOUT,
+                     "A follower's leader_id is reset to NULL "
+                     "as it begins to request_vote.");
     reset_leader_id(empty_id, status);
 
     _state = STATE_CANDIDATE;
     _current_term++;
     _voted_id = _server_id;
 
-    BRAFT_VLOG << "node " << _group_id << ":" << _server_id
-               << " term " << _current_term << " start vote_timer";
+    BRAFT_VLOG << "node " << _group_id << ":" << _server_id << " term "
+               << _current_term << " start vote_timer";
     _vote_timer.start();
     _pre_vote_ctx.reset(this);
     _vote_ctx.init(this, false);
     if (old_leader_stepped_down) {
-        _vote_ctx.set_disrupted_leader(DisruptedLeader(old_leader, leader_term));
+        _vote_ctx.set_disrupted_leader(
+            DisruptedLeader(old_leader, leader_term));
         _follower_lease.expire();
     }
 
@@ -1729,7 +1773,8 @@ void NodeImpl::elect_self(std::unique_lock<raft_mutex_t>* lck,
     if (old_term != _current_term) {
         // term changed cause by step_down
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " raise term " << _current_term << " when get last_log_id";
+                     << " raise term " << _current_term
+                     << " when get last_log_id";
         return;
     }
     _vote_ctx.set_last_log_id(last_log_id);
@@ -1738,13 +1783,14 @@ void NodeImpl::elect_self(std::unique_lock<raft_mutex_t>* lck,
     _conf.list_peers(&peers);
     request_peers_to_vote(peers, _vote_ctx.disrupted_leader());
 
-    //TODO: outof lock
-    status = _meta_storage->
-                    set_term_and_votedfor(_current_term, _server_id, _v_group_id);
+    // TODO: outof lock
+    status = _meta_storage->set_term_and_votedfor(_current_term, _server_id,
+                                                  _v_group_id);
     if (!status.ok()) {
         LOG(ERROR) << "node " << _group_id << ":" << _server_id
                    << " fail to set_term_and_votedfor itself when elect_self,"
-                      " error: " << status;
+                      " error: "
+                   << status;
         // reset _voted_id to avoid inconsistent cases
         // return immediately without granting _vote_ctx
         _voted_id.reset();
@@ -1755,8 +1801,8 @@ void NodeImpl::elect_self(std::unique_lock<raft_mutex_t>* lck,
 
 void NodeImpl::request_peers_to_vote(const std::set<PeerId>& peers,
                                      const DisruptedLeader& disrupted_leader) {
-    for (std::set<PeerId>::const_iterator
-        iter = peers.begin(); iter != peers.end(); ++iter) {
+    for (std::set<PeerId>::const_iterator iter = peers.begin();
+         iter != peers.end(); ++iter) {
         if (*iter == _server_id) {
             continue;
         }
@@ -1771,8 +1817,8 @@ void NodeImpl::request_peers_to_vote(const std::set<PeerId>& peers,
             continue;
         }
 
-        OnRequestVoteRPCDone* done =
-            new OnRequestVoteRPCDone(*iter, _current_term, _vote_ctx.version(), this);
+        OnRequestVoteRPCDone* done = new OnRequestVoteRPCDone(
+            *iter, _current_term, _vote_ctx.version(), this);
         done->cntl.set_timeout_ms(_options.election_timeout_ms);
         done->request.set_group_id(_group_id);
         done->request.set_server_id(_server_id.to_string());
@@ -1782,10 +1828,10 @@ void NodeImpl::request_peers_to_vote(const std::set<PeerId>& peers,
         done->request.set_last_log_term(_vote_ctx.last_log_id().term);
 
         if (disrupted_leader.peer_id != ANY_PEER) {
-            done->request.mutable_disrupted_leader()
-                ->set_peer_id(disrupted_leader.peer_id.to_string());
-            done->request.mutable_disrupted_leader()
-                ->set_term(disrupted_leader.term);
+            done->request.mutable_disrupted_leader()->set_peer_id(
+                disrupted_leader.peer_id.to_string());
+            done->request.mutable_disrupted_leader()->set_term(
+                disrupted_leader.term);
         }
 
         RaftService_Stub stub(&channel);
@@ -1794,13 +1840,12 @@ void NodeImpl::request_peers_to_vote(const std::set<PeerId>& peers,
 }
 
 // in lock
-void NodeImpl::step_down(const int64_t term, bool wakeup_a_candidate, 
+void NodeImpl::step_down(const int64_t term, bool wakeup_a_candidate,
                          const butil::Status& status) {
-    BRAFT_VLOG << "node " << _group_id << ":" << _server_id
-              << " term " << _current_term 
-              << " stepdown from " << state2str(_state)
-              << " new_term " << term
-              << " wakeup_a_candidate=" << wakeup_a_candidate;
+    BRAFT_VLOG << "node " << _group_id << ":" << _server_id << " term "
+               << _current_term << " stepdown from " << state2str(_state)
+               << " new_term " << term
+               << " wakeup_a_candidate=" << wakeup_a_candidate;
 
     if (!is_active_state(_state)) {
         return;
@@ -1822,8 +1867,8 @@ void NodeImpl::step_down(const int64_t term, bool wakeup_a_candidate,
             _fsm_caller->on_leader_stop(status);
         }
     }
-    
-    // reset leader_id 
+
+    // reset leader_id
     PeerId empty_id;
     reset_leader_id(empty_id, status);
 
@@ -1843,13 +1888,14 @@ void NodeImpl::step_down(const int64_t term, bool wakeup_a_candidate,
     if (term > _current_term) {
         _current_term = term;
         _voted_id.reset();
-        //TODO: outof lock
-        butil::Status status = _meta_storage->
-                    set_term_and_votedfor(term, _voted_id, _v_group_id);
+        // TODO: outof lock
+        butil::Status status =
+            _meta_storage->set_term_and_votedfor(term, _voted_id, _v_group_id);
         if (!status.ok()) {
-            LOG(ERROR) << "node " << _group_id << ":" << _server_id
-                       << " fail to set_term_and_votedfor when step_down, error: "
-                       << status;
+            LOG(ERROR)
+                << "node " << _group_id << ":" << _server_id
+                << " fail to set_term_and_votedfor when step_down, error: "
+                << status;
             // TODO report error
         }
     }
@@ -1857,11 +1903,11 @@ void NodeImpl::step_down(const int64_t term, bool wakeup_a_candidate,
     // stop stagging new node
     if (wakeup_a_candidate) {
         _replicator_group.stop_all_and_find_the_next_candidate(
-                                            &_waking_candidate, _conf);
+            &_waking_candidate, _conf);
         // FIXME: We issue the RPC in the critical section, which is fine now
         // since the Node is going to quit when reaching the branch
-        Replicator::send_timeout_now_and_stop(
-                _waking_candidate, _options.election_timeout_ms);
+        Replicator::send_timeout_now_and_stop(_waking_candidate,
+                                              _options.election_timeout_ms);
     } else {
         _replicator_group.stop_all();
     }
@@ -1879,20 +1925,20 @@ void NodeImpl::step_down(const int64_t term, bool wakeup_a_candidate,
     _election_timer.start();
 }
 // in lock
-void NodeImpl::reset_leader_id(const PeerId& new_leader_id, 
-        const butil::Status& status) {
+void NodeImpl::reset_leader_id(const PeerId& new_leader_id,
+                               const butil::Status& status) {
     if (new_leader_id.is_empty()) {
         if (!_leader_id.is_empty() && _state > STATE_TRANSFERRING) {
-            LeaderChangeContext stop_following_context(_leader_id, 
-                    _current_term, status);
+            LeaderChangeContext stop_following_context(_leader_id,
+                                                       _current_term, status);
             _fsm_caller->on_stop_following(stop_following_context);
         }
         _leader_id.reset();
     } else {
         if (_leader_id.is_empty()) {
             _pre_vote_ctx.reset(this);
-            LeaderChangeContext start_following_context(new_leader_id, 
-                    _current_term, status);
+            LeaderChangeContext start_following_context(new_leader_id,
+                                                        _current_term, status);
             _fsm_caller->on_start_following(start_following_context);
         }
         _leader_id = new_leader_id;
@@ -1900,30 +1946,35 @@ void NodeImpl::reset_leader_id(const PeerId& new_leader_id,
 }
 
 // in lock
-void NodeImpl::check_step_down(const int64_t request_term, const PeerId& server_id) {
+void NodeImpl::check_step_down(const int64_t request_term,
+                               const PeerId& server_id) {
     butil::Status status;
     if (request_term > _current_term) {
-        status.set_error(ENEWLEADER, "Raft node receives message from "
-                "new leader with higher term."); 
+        status.set_error(ENEWLEADER,
+                         "Raft node receives message from "
+                         "new leader with higher term.");
         step_down(request_term, false, status);
-    } else if (_state != STATE_FOLLOWER) { 
-        status.set_error(ENEWLEADER, "Candidate receives message "
-                "from new leader with the same term.");
+    } else if (_state != STATE_FOLLOWER) {
+        status.set_error(ENEWLEADER,
+                         "Candidate receives message "
+                         "from new leader with the same term.");
         step_down(request_term, false, status);
     } else if (_leader_id.is_empty()) {
-        status.set_error(ENEWLEADER, "Follower receives message "
-                "from new leader with the same term.");
-        step_down(request_term, false, status); 
+        status.set_error(ENEWLEADER,
+                         "Follower receives message "
+                         "from new leader with the same term.");
+        step_down(request_term, false, status);
     }
     // save current leader
-    if (_leader_id.is_empty()) { 
+    if (_leader_id.is_empty()) {
         reset_leader_id(server_id, status);
     }
 }
 
 class LeaderStartClosure : public Closure {
-public:
-    LeaderStartClosure(StateMachine* fsm, int64_t term) : _fsm(fsm), _term(term) {}
+   public:
+    LeaderStartClosure(StateMachine* fsm, int64_t term)
+        : _fsm(fsm), _term(term) {}
     ~LeaderStartClosure() {}
     void Run() {
         if (status().ok()) {
@@ -1931,7 +1982,8 @@ public:
         }
         delete this;
     }
-private:
+
+   private:
     StateMachine* _fsm;
     int64_t _term;
 };
@@ -1939,9 +1991,8 @@ private:
 // in lock
 void NodeImpl::become_leader() {
     CHECK(_state == STATE_CANDIDATE);
-    LOG(INFO) << "node " << _group_id << ":" << _server_id
-              << " term " << _current_term
-              << " become leader of group " << _conf.conf
+    LOG(INFO) << "node " << _group_id << ":" << _server_id << " term "
+              << _current_term << " become leader of group " << _conf.conf
               << " " << _conf.old_conf;
     // cancel candidate vote timer
     _vote_timer.stop();
@@ -1956,16 +2007,15 @@ void NodeImpl::become_leader() {
 
     std::set<PeerId> peers;
     _conf.list_peers(&peers);
-    for (std::set<PeerId>::const_iterator
-            iter = peers.begin(); iter != peers.end(); ++iter) {
+    for (std::set<PeerId>::const_iterator iter = peers.begin();
+         iter != peers.end(); ++iter) {
         if (*iter == _server_id) {
             continue;
         }
 
-        BRAFT_VLOG << "node " << _group_id << ":" << _server_id
-                   << " term " << _current_term
-                   << " add replicator " << *iter;
-        //TODO: check return code
+        BRAFT_VLOG << "node " << _group_id << ":" << _server_id << " term "
+                   << _current_term << " add replicator " << *iter;
+        // TODO: check return code
         _replicator_group.add_replicator(*iter);
     }
 
@@ -1980,48 +2030,45 @@ void NodeImpl::become_leader() {
 }
 
 class LeaderStableClosure : public LogManager::StableClosure {
-public:
+   public:
     void Run();
-private:
-    LeaderStableClosure(const NodeId& node_id,
-                        size_t nentries,
+
+   private:
+    LeaderStableClosure(const NodeId& node_id, size_t nentries,
                         BallotBox* ballot_box);
     ~LeaderStableClosure() {}
-friend class NodeImpl;
+    friend class NodeImpl;
     NodeId _node_id;
     size_t _nentries;
     BallotBox* _ballot_box;
 };
 
-LeaderStableClosure::LeaderStableClosure(const NodeId& node_id,
-                                         size_t nentries,
+LeaderStableClosure::LeaderStableClosure(const NodeId& node_id, size_t nentries,
                                          BallotBox* ballot_box)
-    : _node_id(node_id), _nentries(nentries), _ballot_box(ballot_box)
-{
-}
+    : _node_id(node_id), _nentries(nentries), _ballot_box(ballot_box) {}
 
 void LeaderStableClosure::Run() {
     if (status().ok()) {
         if (_ballot_box) {
             // ballot_box check quorum ok, will call fsm_caller
-            _ballot_box->commit_at(
-                    _first_log_index, _first_log_index + _nentries - 1, _node_id.peer_id);
+            _ballot_box->commit_at(_first_log_index,
+                                   _first_log_index + _nentries - 1,
+                                   _node_id.peer_id);
         }
         int64_t now = butil::cpuwide_time_us();
-        if (FLAGS_raft_trace_append_entry_latency && 
-            now - metric.start_time_us > (int64_t)FLAGS_raft_append_entry_high_lat_us) {
-            LOG(WARNING) << "leader append entry latency us " << (now - metric.start_time_us) 
-                         << " greater than " 
-                         << FLAGS_raft_append_entry_high_lat_us
-                         << metric
-                         << " node " << _node_id
-                         << " log_index [" << _first_log_index 
-                         << ", " << _first_log_index + _nentries - 1
-                         << "]";
+        if (FLAGS_raft_trace_append_entry_latency &&
+            now - metric.start_time_us >
+                (int64_t)FLAGS_raft_append_entry_high_lat_us) {
+            LOG(WARNING) << "leader append entry latency us "
+                         << (now - metric.start_time_us) << " greater than "
+                         << FLAGS_raft_append_entry_high_lat_us << metric
+                         << " node " << _node_id << " log_index ["
+                         << _first_log_index << ", "
+                         << _first_log_index + _nentries - 1 << "]";
         }
     } else {
-        LOG(ERROR) << "node " << _node_id << " append [" << _first_log_index << ", "
-                   << _first_log_index + _nentries - 1 << "] failed";
+        LOG(ERROR) << "node " << _node_id << " append [" << _first_log_index
+                   << ", " << _first_log_index + _nentries - 1 << "] failed";
     }
     delete this;
 }
@@ -2043,7 +2090,8 @@ void NodeImpl::apply(LogEntryAndClosure tasks[], size_t size) {
             st.set_error(EBUSY, "is transferring leadership");
         }
         lck.unlock();
-        BRAFT_VLOG << "node " << _group_id << ":" << _server_id << " can't apply : " << st;
+        BRAFT_VLOG << "node " << _group_id << ":" << _server_id
+                   << " can't apply : " << st;
         for (size_t i = 0; i < size; ++i) {
             tasks[i].entry->Release();
             if (tasks[i].done) {
@@ -2054,14 +2102,18 @@ void NodeImpl::apply(LogEntryAndClosure tasks[], size_t size) {
         return;
     }
     for (size_t i = 0; i < size; ++i) {
-        if (tasks[i].expected_term != -1 && tasks[i].expected_term != _current_term) {
+        if (tasks[i].expected_term != -1 &&
+            tasks[i].expected_term != _current_term) {
             BRAFT_VLOG << "node " << _group_id << ":" << _server_id
-                      << " can't apply taks whose expected_term=" << tasks[i].expected_term
-                      << " doesn't match current_term=" << _current_term;
+                       << " can't apply taks whose expected_term="
+                       << tasks[i].expected_term
+                       << " doesn't match current_term=" << _current_term;
             if (tasks[i].done) {
                 tasks[i].done->status().set_error(
-                        EPERM, "expected_term=%" PRId64 " doesn't match current_term=%" PRId64,
-                        tasks[i].expected_term, _current_term);
+                    EPERM,
+                    "expected_term=%" PRId64
+                    " doesn't match current_term=%" PRId64,
+                    tasks[i].expected_term, _current_term);
                 run_closure_in_bthread(tasks[i].done);
             }
             tasks[i].entry->Release();
@@ -2074,11 +2126,9 @@ void NodeImpl::apply(LogEntryAndClosure tasks[], size_t size) {
             _conf.conf, _conf.stable() ? nullptr : &_conf.old_conf,
             tasks[i].done);
     }
-    _log_manager->append_entries(&entries,
-                               new LeaderStableClosure(
-                                        NodeId(_group_id, _server_id),
-                                        entries.size(),
-                                        _ballot_box));
+    _log_manager->append_entries(
+        &entries, new LeaderStableClosure(NodeId(_group_id, _server_id),
+                                          entries.size(), _ballot_box));
     // update _conf.first
     _log_manager->check_and_set_configuration(&_conf);
 }
@@ -2098,31 +2148,32 @@ void NodeImpl::unsafe_apply_configuration(const Configuration& new_conf,
         old_conf->list_peers(entry->old_peers);
     }
     ConfigurationChangeDone* configuration_change_done =
-            new ConfigurationChangeDone(this, _current_term, leader_start, _leader_lease.lease_epoch());
+        new ConfigurationChangeDone(this, _current_term, leader_start,
+                                    _leader_lease.lease_epoch());
     // Use the new_conf to deal the quorum of this very log
-    _ballot_box->append_pending_task(new_conf, old_conf, configuration_change_done);
+    _ballot_box->append_pending_task(new_conf, old_conf,
+                                     configuration_change_done);
 
     std::vector<LogEntry*> entries;
     entries.push_back(entry);
-    _log_manager->append_entries(&entries,
-                                 new LeaderStableClosure(
-                                        NodeId(_group_id, _server_id),
-                                        1u, _ballot_box));
+    _log_manager->append_entries(
+        &entries, new LeaderStableClosure(NodeId(_group_id, _server_id), 1u,
+                                          _ballot_box));
     _log_manager->check_and_set_configuration(&_conf);
 }
 
 int NodeImpl::handle_pre_vote_request(const RequestVoteRequest* request,
                                       RequestVoteResponse* response) {
     std::unique_lock<raft_mutex_t> lck(_mutex);
-    
+
     if (!is_active_state(_state)) {
         const int64_t saved_current_term = _current_term;
         const State saved_state = _state;
         lck.unlock();
-        LOG(WARNING) << "node " << _group_id << ":" << _server_id 
-                     << " is not in active state " << "current_term " 
-                     << saved_current_term
-                     << " state " << state2str(saved_state);
+        LOG(WARNING) << "node " << _group_id << ":" << _server_id
+                     << " is not in active state "
+                     << "current_term " << saved_current_term << " state "
+                     << state2str(saved_state);
         return EINVAL;
     }
 
@@ -2141,8 +2192,8 @@ int NodeImpl::handle_pre_vote_request(const RequestVoteRequest* request,
             // ignore older term
             LOG(INFO) << "node " << _group_id << ":" << _server_id
                       << " ignore PreVote from " << request->server_id()
-                      << " in term " << request->term()
-                      << " current_term " << _current_term;
+                      << " in term " << request->term() << " current_term "
+                      << _current_term;
             break;
         }
 
@@ -2152,8 +2203,8 @@ int NodeImpl::handle_pre_vote_request(const RequestVoteRequest* request,
         lck.lock();
         // pre_vote not need ABA check after unlock&lock
         int64_t votable_time = _follower_lease.votable_time_from_now();
-        bool grantable = (LogId(request->last_log_index(), request->last_log_term())
-                        >= last_log_id);
+        bool grantable = (LogId(request->last_log_index(),
+                                request->last_log_term()) >= last_log_id);
         if (grantable) {
             granted = (votable_time == 0);
             rejected_by_lease = (votable_time > 0);
@@ -2161,9 +2212,8 @@ int NodeImpl::handle_pre_vote_request(const RequestVoteRequest* request,
 
         LOG(INFO) << "node " << _group_id << ":" << _server_id
                   << " received PreVote from " << request->server_id()
-                  << " in term " << request->term()
-                  << " current_term " << _current_term
-                  << " granted " << granted
+                  << " in term " << request->term() << " current_term "
+                  << _current_term << " granted " << granted
                   << " rejected_by_lease " << rejected_by_lease;
 
     } while (0);
@@ -2185,10 +2235,10 @@ int NodeImpl::handle_request_vote_request(const RequestVoteRequest* request,
         const int64_t saved_current_term = _current_term;
         const State saved_state = _state;
         lck.unlock();
-        LOG(WARNING) << "node " << _group_id << ":" << _server_id 
-                     << " is not in active state " << "current_term " 
-                     << saved_current_term
-                     << " state " << state2str(saved_state);
+        LOG(WARNING) << "node " << _group_id << ":" << _server_id
+                     << " is not in active state "
+                     << "current_term " << saved_current_term << " state "
+                     << state2str(saved_state);
         return EINVAL;
     }
 
@@ -2201,11 +2251,10 @@ int NodeImpl::handle_request_vote_request(const RequestVoteRequest* request,
     }
 
     PeerId disrupted_leader_id;
-    if (_state == STATE_FOLLOWER &&
-            request->has_disrupted_leader() &&
-            _current_term == request->disrupted_leader().term() &&
-            0 == disrupted_leader_id.parse(request->disrupted_leader().peer_id()) &&
-            _leader_id == disrupted_leader_id) {
+    if (_state == STATE_FOLLOWER && request->has_disrupted_leader() &&
+        _current_term == request->disrupted_leader().term() &&
+        0 == disrupted_leader_id.parse(request->disrupted_leader().peer_id()) &&
+        _leader_id == disrupted_leader_id) {
         // The candidate has already disrupted the old leader, we
         // can expire the lease safely.
         _follower_lease.expire();
@@ -2220,8 +2269,8 @@ int NodeImpl::handle_request_vote_request(const RequestVoteRequest* request,
             // ignore older term
             LOG(INFO) << "node " << _group_id << ":" << _server_id
                       << " ignore RequestVote from " << request->server_id()
-                      << " in term " << request->term()
-                      << " current_term " << _current_term;
+                      << " in term " << request->term() << " current_term "
+                      << _current_term;
             break;
         }
 
@@ -2233,19 +2282,19 @@ int NodeImpl::handle_request_vote_request(const RequestVoteRequest* request,
         // vote need ABA check after unlock&lock
         if (previous_term != _current_term) {
             LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                         << " raise term " << _current_term << " when get last_log_id";
+                         << " raise term " << _current_term
+                         << " when get last_log_id";
             break;
         }
 
-        bool log_is_ok = (LogId(request->last_log_index(), request->last_log_term())
-                          >= last_log_id);
+        bool log_is_ok = (LogId(request->last_log_index(),
+                                request->last_log_term()) >= last_log_id);
         int64_t votable_time = _follower_lease.votable_time_from_now();
 
         LOG(INFO) << "node " << _group_id << ":" << _server_id
                   << " received RequestVote from " << request->server_id()
-                  << " in term " << request->term()
-                  << " current_term " << _current_term
-                  << " log_is_ok " << log_is_ok
+                  << " in term " << request->term() << " current_term "
+                  << _current_term << " log_is_ok " << log_is_ok
                   << " votable_time " << votable_time;
 
         // if the vote is rejected by lease, tell the candidate
@@ -2257,8 +2306,9 @@ int NodeImpl::handle_request_vote_request(const RequestVoteRequest* request,
         // increase current term, change state to follower
         if (request->term() > _current_term) {
             butil::Status status;
-            status.set_error(EHIGHERTERMREQUEST, "Raft node receives higher term "
-                    "request_vote_request.");
+            status.set_error(EHIGHERTERMREQUEST,
+                             "Raft node receives higher term "
+                             "request_vote_request.");
             disrupted = (_state <= STATE_TRANSFERRING);
             step_down(request->term(), false, status);
         }
@@ -2266,20 +2316,21 @@ int NodeImpl::handle_request_vote_request(const RequestVoteRequest* request,
         // save
         if (log_is_ok && _voted_id.is_empty()) {
             butil::Status status;
-            status.set_error(EVOTEFORCANDIDATE, "Raft node votes for some candidate, "
-                    "step down to restart election_timer.");
+            status.set_error(EVOTEFORCANDIDATE,
+                             "Raft node votes for some candidate, "
+                             "step down to restart election_timer.");
             step_down(request->term(), false, status);
             _voted_id = candidate_id;
-            //TODO: outof lock
-            status = _meta_storage->
-                    set_term_and_votedfor(_current_term, candidate_id, _v_group_id);
+            // TODO: outof lock
+            status = _meta_storage->set_term_and_votedfor(
+                _current_term, candidate_id, _v_group_id);
             if (!status.ok()) {
                 LOG(ERROR) << "node " << _group_id << ":" << _server_id
                            << " refuse to vote for " << request->server_id()
                            << " because failed to set_votedfor it, error: "
                            << status;
                 // reset _voted_id to response set_granted(false)
-                _voted_id.reset(); 
+                _voted_id.reset();
             }
         }
     } while (0);
@@ -2287,34 +2338,33 @@ int NodeImpl::handle_request_vote_request(const RequestVoteRequest* request,
     response->set_disrupted(disrupted);
     response->set_previous_term(previous_term);
     response->set_term(_current_term);
-    response->set_granted(request->term() == _current_term && _voted_id == candidate_id);
+    response->set_granted(request->term() == _current_term &&
+                          _voted_id == candidate_id);
     response->set_rejected_by_lease(rejected_by_lease);
     return 0;
 }
 
 class FollowerStableClosure : public LogManager::StableClosure {
-public:
-    FollowerStableClosure(
-            brpc::Controller* cntl,
-            const AppendEntriesRequest* request,
-            AppendEntriesResponse* response,
-            google::protobuf::Closure* done,
-            NodeImpl* node,
-            int64_t term)
-        : _cntl(cntl)
-        , _request(request)
-        , _response(response)
-        , _done(done)
-        , _node(node)
-        , _term(term)
-    {
+   public:
+    FollowerStableClosure(brpc::Controller* cntl,
+                          const AppendEntriesRequest* request,
+                          AppendEntriesResponse* response,
+                          google::protobuf::Closure* done, NodeImpl* node,
+                          int64_t term)
+        : _cntl(cntl),
+          _request(request),
+          _response(response),
+          _done(done),
+          _node(node),
+          _term(term) {
         _node->AddRef();
     }
     void Run() {
         run();
         delete this;
     }
-private:
+
+   private:
     ~FollowerStableClosure() {
         if (_node) {
             _node->Release();
@@ -2356,26 +2406,27 @@ private:
         _response->set_term(_term);
 
         const int64_t committed_index =
-                std::min(_request->committed_index(),
-                         // ^^^ committed_index is likely less than the
-                         // last_log_index
-                         _request->prev_log_index() + _request->entries_size()
-                         // ^^^ The logs after the appended entries are
-                         // untrustable so we can't commit them even if their
-                         // indexes are less than request->committed_index()
-                        );
+            std::min(_request->committed_index(),
+                     // ^^^ committed_index is likely less than the
+                     // last_log_index
+                     _request->prev_log_index() + _request->entries_size()
+                     // ^^^ The logs after the appended entries are
+                     // untrustable so we can't commit them even if their
+                     // indexes are less than request->committed_index()
+            );
         //_ballot_box is thread safe and tolerates disorder.
         _node->_ballot_box->set_last_committed_index(committed_index);
         int64_t now = butil::cpuwide_time_us();
-        if (FLAGS_raft_trace_append_entry_latency && now - metric.start_time_us > 
+        if (FLAGS_raft_trace_append_entry_latency &&
+            now - metric.start_time_us >
                 (int64_t)FLAGS_raft_append_entry_high_lat_us) {
-            LOG(WARNING) << "follower append entry latency us " << (now - metric.start_time_us) 
-                         << " greater than " 
-                         << FLAGS_raft_append_entry_high_lat_us
-                         << metric
-                         << " node " << _node->node_id()
-                         << " log_index [" << _request->prev_log_index() + 1 
-                         << ", " << _request->prev_log_index() + _request->entries_size() - 1
+            LOG(WARNING) << "follower append entry latency us "
+                         << (now - metric.start_time_us) << " greater than "
+                         << FLAGS_raft_append_entry_high_lat_us << metric
+                         << " node " << _node->node_id() << " log_index ["
+                         << _request->prev_log_index() + 1 << ", "
+                         << _request->prev_log_index() +
+                                _request->entries_size() - 1
                          << "]";
         }
     }
@@ -2388,11 +2439,10 @@ private:
     int64_t _term;
 };
 
-void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
-                                             const AppendEntriesRequest* request,
-                                             AppendEntriesResponse* response,
-                                             google::protobuf::Closure* done,
-                                             bool from_append_entries_cache) {
+void NodeImpl::handle_append_entries_request(
+    brpc::Controller* cntl, const AppendEntriesRequest* request,
+    AppendEntriesResponse* response, google::protobuf::Closure* done,
+    bool from_append_entries_cache) {
     std::vector<LogEntry*> entries;
     entries.reserve(request->entries_size());
     brpc::ClosureGuard done_guard(done);
@@ -2405,11 +2455,13 @@ void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
         const int64_t saved_current_term = _current_term;
         const State saved_state = _state;
         lck.unlock();
-        LOG(WARNING) << "node " << _group_id << ":" << _server_id 
-                     << " is not in active state " << "current_term " << saved_current_term 
-                     << " state " << state2str(saved_state);
-        cntl->SetFailed(EINVAL, "node %s:%s is not in active state, state %s", 
-                _group_id.c_str(), _server_id.to_string().c_str(), state2str(saved_state));
+        LOG(WARNING) << "node " << _group_id << ":" << _server_id
+                     << " is not in active state "
+                     << "current_term " << saved_current_term << " state "
+                     << state2str(saved_state);
+        cntl->SetFailed(EINVAL, "node %s:%s is not in active state, state %s",
+                        _group_id.c_str(), _server_id.to_string().c_str(),
+                        state2str(saved_state));
         return;
     }
 
@@ -2419,8 +2471,7 @@ void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
                      << " received AppendEntries from " << request->server_id()
                      << " server_id bad format";
-        cntl->SetFailed(brpc::EREQUEST,
-                        "Fail to parse server_id `%s'",
+        cntl->SetFailed(brpc::EREQUEST, "Fail to parse server_id `%s'",
                         request->server_id().c_str());
         return;
     }
@@ -2430,8 +2481,8 @@ void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
         const int64_t saved_current_term = _current_term;
         lck.unlock();
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " ignore stale AppendEntries from " << request->server_id()
-                     << " in term " << request->term()
+                     << " ignore stale AppendEntries from "
+                     << request->server_id() << " in term " << request->term()
                      << " current_term " << saved_current_term;
         response->set_success(false);
         response->set_term(saved_current_term);
@@ -2439,16 +2490,18 @@ void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
     }
 
     // check term and state to step down
-    check_step_down(request->term(), server_id);   
-     
+    check_step_down(request->term(), server_id);
+
     if (server_id != _leader_id) {
         LOG(ERROR) << "Another peer " << _group_id << ":" << server_id
-                   << " declares that it is the leader at term=" << _current_term 
+                   << " declares that it is the leader at term="
+                   << _current_term
                    << " which was occupied by leader=" << _leader_id;
-        // Increase the term by 1 and make both leaders step down to minimize the
-        // loss of split brain
+        // Increase the term by 1 and make both leaders step down to minimize
+        // the loss of split brain
         butil::Status status;
-        status.set_error(ELEADERCONFLICT, "More than one leader in the same term."); 
+        status.set_error(ELEADERCONFLICT,
+                         "More than one leader in the same term.");
         step_down(request->term() + 1, false, status);
         response->set_success(false);
         response->set_term(request->term() + 1);
@@ -2461,8 +2514,7 @@ void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
     }
 
     if (request->entries_size() > 0 &&
-            (_snapshot_executor
-                && _snapshot_executor->is_installing_snapshot())) {
+        (_snapshot_executor && _snapshot_executor->is_installing_snapshot())) {
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
                      << " received append entries while installing snapshot";
         cntl->SetFailed(EBUSY, "Is installing snapshot");
@@ -2475,24 +2527,23 @@ void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
     if (local_prev_log_term != prev_log_term) {
         int64_t last_index = _log_manager->last_log_index();
         int64_t saved_term = request->term();
-        int     saved_entries_size = request->entries_size();
+        int saved_entries_size = request->entries_size();
         std::string rpc_server_id = request->server_id();
         if (!from_append_entries_cache &&
-            handle_out_of_order_append_entries(
-                    cntl, request, response, done, last_index)) {
-            // It's not safe to touch cntl/request/response/done after this point,
-            // since the ownership is tranfered to the cache.
+            handle_out_of_order_append_entries(cntl, request, response, done,
+                                               last_index)) {
+            // It's not safe to touch cntl/request/response/done after this
+            // point, since the ownership is tranfered to the cache.
             lck.unlock();
             done_guard.release();
             LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                         << " cache out-of-order AppendEntries from " 
-                         << rpc_server_id
-                         << " in term " << saved_term
+                         << " cache out-of-order AppendEntries from "
+                         << rpc_server_id << " in term " << saved_term
                          << " prev_log_index " << prev_log_index
                          << " prev_log_term " << prev_log_term
                          << " local_prev_log_term " << local_prev_log_term
-                         << " last_log_index " << last_index
-                         << " entries_size " << saved_entries_size;
+                         << " last_log_index " << last_index << " entries_size "
+                         << saved_entries_size;
             return;
         }
 
@@ -2502,15 +2553,16 @@ void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
         lck.unlock();
         if (local_prev_log_term != 0) {
             LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                         << " reject term_unmatched AppendEntries from " 
-                         << request->server_id()
-                         << " in term " << request->term()
-                         << " prev_log_index " << request->prev_log_index()
-                         << " prev_log_term " << request->prev_log_term()
-                         << " local_prev_log_term " << local_prev_log_term
-                         << " last_log_index " << last_index
-                         << " entries_size " << request->entries_size()
-                         << " from_append_entries_cache: " << from_append_entries_cache;
+                         << " reject term_unmatched AppendEntries from "
+                         << request->server_id() << " in term "
+                         << request->term() << " prev_log_index "
+                         << request->prev_log_index() << " prev_log_term "
+                         << request->prev_log_term() << " local_prev_log_term "
+                         << local_prev_log_term << " last_log_index "
+                         << last_index << " entries_size "
+                         << request->entries_size()
+                         << " from_append_entries_cache: "
+                         << from_append_entries_cache;
         }
         return;
     }
@@ -2523,8 +2575,7 @@ void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
         lck.unlock();
         // see the comments at FollowerStableClosure::run()
         _ballot_box->set_last_committed_index(
-                std::min(request->committed_index(),
-                         prev_log_index));
+            std::min(request->committed_index(), prev_log_index));
         return;
     }
 
@@ -2568,8 +2619,7 @@ void NodeImpl::handle_append_entries_request(brpc::Controller* cntl,
     check_append_entries_cache(index);
 
     FollowerStableClosure* c = new FollowerStableClosure(
-            cntl, request, response, done_guard.release(),
-            this, _current_term);
+        cntl, request, response, done_guard.release(), this, _current_term);
     _log_manager->append_entries(&entries, c);
 
     // update configuration after _log_manager updated its memory status
@@ -2585,9 +2635,7 @@ int NodeImpl::increase_term_to(int64_t new_term, const butil::Status& status) {
     return 0;
 }
 
-void NodeImpl::after_shutdown(NodeImpl* node) {
-    return node->after_shutdown();
-}
+void NodeImpl::after_shutdown(NodeImpl* node) { return node->after_shutdown(); }
 
 void NodeImpl::after_shutdown() {
     std::vector<Closure*> saved_done;
@@ -2606,10 +2654,9 @@ void NodeImpl::after_shutdown() {
     }
 }
 
-void NodeImpl::handle_install_snapshot_request(brpc::Controller* cntl,
-                                    const InstallSnapshotRequest* request,
-                                    InstallSnapshotResponse* response,
-                                    google::protobuf::Closure* done) {
+void NodeImpl::handle_install_snapshot_request(
+    brpc::Controller* cntl, const InstallSnapshotRequest* request,
+    InstallSnapshotResponse* response, google::protobuf::Closure* done) {
     brpc::ClosureGuard done_guard(done);
     if (_snapshot_executor == NULL) {
         cntl->SetFailed(EINVAL, "Not support snapshot");
@@ -2622,40 +2669,44 @@ void NodeImpl::handle_install_snapshot_request(brpc::Controller* cntl,
         return;
     }
     std::unique_lock<raft_mutex_t> lck(_mutex);
-    
+
     if (!is_active_state(_state)) {
         const int64_t saved_current_term = _current_term;
         const State saved_state = _state;
         lck.unlock();
-        LOG(WARNING) << "node " << _group_id << ":" << _server_id 
-                     << " is not in active state " << "current_term " 
-                     << saved_current_term << " state " << state2str(saved_state);
-        cntl->SetFailed(EINVAL, "node %s:%s is not in active state, state %s", 
-                _group_id.c_str(), _server_id.to_string().c_str(), state2str(saved_state));
+        LOG(WARNING) << "node " << _group_id << ":" << _server_id
+                     << " is not in active state "
+                     << "current_term " << saved_current_term << " state "
+                     << state2str(saved_state);
+        cntl->SetFailed(EINVAL, "node %s:%s is not in active state, state %s",
+                        _group_id.c_str(), _server_id.to_string().c_str(),
+                        state2str(saved_state));
         return;
     }
 
     // check stale term
     if (request->term() < _current_term) {
         LOG(WARNING) << "node " << _group_id << ":" << _server_id
-                     << " ignore stale InstallSnapshot from " << request->server_id()
-                     << " in term " << request->term()
+                     << " ignore stale InstallSnapshot from "
+                     << request->server_id() << " in term " << request->term()
                      << " current_term " << _current_term;
         response->set_term(_current_term);
         response->set_success(false);
         return;
     }
-    
+
     check_step_down(request->term(), server_id);
 
     if (server_id != _leader_id) {
         LOG(ERROR) << "Another peer " << _group_id << ":" << server_id
-                   << " declares that it is the leader at term=" << _current_term 
+                   << " declares that it is the leader at term="
+                   << _current_term
                    << " which was occupied by leader=" << _leader_id;
-        // Increase the term by 1 and make both leaders step down to minimize the
-        // loss of split brain
+        // Increase the term by 1 and make both leaders step down to minimize
+        // the loss of split brain
         butil::Status status;
-        status.set_error(ELEADERCONFLICT, "More than one leader in the same term."); 
+        status.set_error(ELEADERCONFLICT,
+                         "More than one leader in the same term.");
         step_down(request->term() + 1, false, status);
         response->set_success(false);
         response->set_term(request->term() + 1);
@@ -2668,11 +2719,10 @@ void NodeImpl::handle_install_snapshot_request(brpc::Controller* cntl,
               << " last_included_log_index="
               << request->meta().last_included_index()
               << " last_include_log_term="
-              << request->meta().last_included_term()
-              << " from " << server_id
+              << request->meta().last_included_term() << " from " << server_id
               << " when last_log_id=" << _log_manager->last_log_id();
-    return _snapshot_executor->install_snapshot(
-            cntl, request, response, done_guard.release());
+    return _snapshot_executor->install_snapshot(cntl, request, response,
+                                                done_guard.release());
 }
 
 void NodeImpl::update_configuration_after_installing_snapshot() {
@@ -2680,19 +2730,25 @@ void NodeImpl::update_configuration_after_installing_snapshot() {
     _log_manager->check_and_set_configuration(&_conf);
 }
 
-butil::Status NodeImpl::read_committed_user_log(const int64_t index, UserLog* user_log) {
+butil::Status NodeImpl::read_committed_user_log(const int64_t index,
+                                                UserLog* user_log) {
     if (index <= 0) {
-        return butil::Status(EINVAL, "request index:%" PRId64 " is invalid.", index);
+        return butil::Status(EINVAL, "request index:%" PRId64 " is invalid.",
+                             index);
     }
     const int64_t saved_last_applied_index = _fsm_caller->last_applied_index();
     if (index > saved_last_applied_index) {
-        return butil::Status(ENOMOREUSERLOG, "request index:%" PRId64 " is greater"
-                " than last_applied_index:%" PRId64, index, saved_last_applied_index);
+        return butil::Status(ENOMOREUSERLOG,
+                             "request index:%" PRId64
+                             " is greater"
+                             " than last_applied_index:%" PRId64,
+                             index, saved_last_applied_index);
     }
     int64_t cur_index = index;
     LogEntry* entry = _log_manager->get_entry(cur_index);
     if (entry == NULL) {
-        return butil::Status(ELOGDELETED, "user log is deleted at index:%" PRId64, index);
+        return butil::Status(ELOGDELETED,
+                             "user log is deleted at index:%" PRId64, index);
     }
     do {
         if (entry->type == ENTRY_TYPE_DATA) {
@@ -2705,14 +2761,17 @@ butil::Status NodeImpl::read_committed_user_log(const int64_t index, UserLog* us
             ++cur_index;
         }
         if (cur_index > saved_last_applied_index) {
-            return butil::Status(ENOMOREUSERLOG, "no user log between index:%" PRId64
-                    " and last_applied_index:%" PRId64, index, saved_last_applied_index);
+            return butil::Status(ENOMOREUSERLOG,
+                                 "no user log between index:%" PRId64
+                                 " and last_applied_index:%" PRId64,
+                                 index, saved_last_applied_index);
         }
         entry = _log_manager->get_entry(cur_index);
     } while (entry != NULL);
-    // entry is likely to be NULL because snapshot is done after 
+    // entry is likely to be NULL because snapshot is done after
     // getting saved_last_applied_index.
-    return butil::Status(ELOGDELETED, "user log is deleted at index:%" PRId64, cur_index);
+    return butil::Status(ELOGDELETED, "user log is deleted at index:%" PRId64,
+                         cur_index);
 }
 
 void NodeImpl::describe(std::ostream& os, bool use_html) {
@@ -2725,13 +2784,13 @@ void NodeImpl::describe(std::ostream& os, bool use_html) {
     }
     const int64_t term = _current_term;
     const int64_t conf_index = _conf.id.index;
-    //const int ref_count = ref_count_;
+    // const int ref_count = ref_count_;
     std::vector<PeerId> peers;
     _conf.conf.list_peers(&peers);
 
     const std::string is_changing_conf = _conf_ctx.is_busy() ? "YES" : "NO";
-    const char* conf_statge = _conf_ctx.stage_str(); 
-    // new_peers and old_peers during all conf-change stages, namely 
+    const char* conf_statge = _conf_ctx.stage_str();
+    // new_peers and old_peers during all conf-change stages, namely
     // STAGE_CATCHING_UP->STAGE_JOINT->STAGE_STABLE
     std::vector<PeerId> new_peers;
     _conf_ctx.list_new_peers(&new_peers);
@@ -2743,7 +2802,7 @@ void NodeImpl::describe(std::ostream& os, bool use_html) {
     const int64_t leader_timestamp = _follower_lease.last_leader_timestamp();
     const bool readonly = (_node_readonly || _majority_nodes_readonly);
     lck.unlock();
-    const char *newline = use_html ? "<br>" : "\r\n";
+    const char* newline = use_html ? "<br>" : "\r\n";
     os << "peer_id: " << _server_id << newline;
     os << "state: " << state2str(st) << newline;
     os << "readonly: " << readonly << newline;
@@ -2753,8 +2812,8 @@ void NodeImpl::describe(std::ostream& os, bool use_html) {
     for (size_t j = 0; j < peers.size(); ++j) {
         os << ' ';
         if (use_html && peers[j] != _server_id) {
-            os << "<a href=\"http://" << peers[j].addr
-               << "/raft_stat/" << _group_id << "\">";
+            os << "<a href=\"http://" << peers[j].addr << "/raft_stat/"
+               << _group_id << "\">";
         }
         os << peers[j];
         if (use_html && peers[j] != _server_id) {
@@ -2766,15 +2825,15 @@ void NodeImpl::describe(std::ostream& os, bool use_html) {
     // info of configuration change
     if (st == STATE_LEADER) {
         os << "changing_conf: " << is_changing_conf
-           << "    stage: " << conf_statge << newline; 
+           << "    stage: " << conf_statge << newline;
     }
     if (!new_peers.empty()) {
         os << "new_peers:";
         for (size_t j = 0; j < new_peers.size(); ++j) {
             os << ' ';
             if (use_html && new_peers[j] != _server_id) {
-                os << "<a href=\"http://" << new_peers[j].addr
-                   << "/raft_stat/" << _group_id << "\">";
+                os << "<a href=\"http://" << new_peers[j].addr << "/raft_stat/"
+                   << _group_id << "\">";
             }
             os << new_peers[j];
             if (use_html && new_peers[j] != _server_id) {
@@ -2788,8 +2847,8 @@ void NodeImpl::describe(std::ostream& os, bool use_html) {
         for (size_t j = 0; j < old_peers.size(); ++j) {
             os << ' ';
             if (use_html && old_peers[j] != _server_id) {
-                os << "<a href=\"http://" << old_peers[j].addr
-                   << "/raft_stat/" << _group_id << "\">";
+                os << "<a href=\"http://" << old_peers[j].addr << "/raft_stat/"
+                   << _group_id << "\">";
             }
             os << old_peers[j];
             if (use_html && old_peers[j] != _server_id) {
@@ -2802,15 +2861,14 @@ void NodeImpl::describe(std::ostream& os, bool use_html) {
     if (st == STATE_FOLLOWER) {
         os << "leader: ";
         if (use_html) {
-            os << "<a href=\"http://" << leader.addr
-               << "/raft_stat/" << _group_id << "\">"
-               << leader << "</a>";
+            os << "<a href=\"http://" << leader.addr << "/raft_stat/"
+               << _group_id << "\">" << leader << "</a>";
         } else {
             os << leader;
         }
         os << newline;
-        os << "last_msg_to_now: " << butil::monotonic_time_ms() - leader_timestamp 
-           << newline;
+        os << "last_msg_to_now: "
+           << butil::monotonic_time_ms() - leader_timestamp << newline;
     }
 
     // Show timers
@@ -2853,8 +2911,7 @@ void NodeImpl::get_status(NodeStatus* status) {
     _conf.conf.list_peers(&peers);
     _replicator_group.list_replicators(&replicators);
 
-    if (status->state == STATE_LEADER ||
-        status->state == STATE_TRANSFERRING) {
+    if (status->state == STATE_LEADER || status->state == STATE_TRANSFERRING) {
         status->leader_id = _server_id;
     } else if (status->state == STATE_FOLLOWER) {
         status->leader_id = _leader_id;
@@ -2876,7 +2933,7 @@ void NodeImpl::get_status(NodeStatus* status) {
     status->pending_queue_size = ballot_box_status.pending_queue_size;
 
     status->applying_index = _fsm_caller->applying_index();
-    
+
     if (replicators.size() == 0) {
         return;
     }
@@ -2892,8 +2949,9 @@ void NodeImpl::get_status(NodeStatus* status) {
         NodeStatus::PeerStatusMap::iterator it =
             status->stable_followers.find(replicators[i].first);
         if (it == status->stable_followers.end()) {
-            it = status->unstable_followers.insert(
-                    std::make_pair(replicators[i].first, PeerStatus())).first;
+            it = status->unstable_followers
+                     .insert(std::make_pair(replicators[i].first, PeerStatus()))
+                     .first;
         }
         Replicator::get_status(replicators[i].second, &(it->second));
     }
@@ -2901,26 +2959,26 @@ void NodeImpl::get_status(NodeStatus* status) {
 
 void NodeImpl::stop_replicator(const std::set<PeerId>& keep,
                                const std::set<PeerId>& drop) {
-    for (std::set<PeerId>::const_iterator
-            iter = drop.begin(); iter != drop.end(); ++iter) {
+    for (std::set<PeerId>::const_iterator iter = drop.begin();
+         iter != drop.end(); ++iter) {
         if (keep.find(*iter) == keep.end() && *iter != _server_id) {
             _replicator_group.stop_replicator(*iter);
         }
     }
 }
 
-bool NodeImpl::handle_out_of_order_append_entries(brpc::Controller* cntl,
-                                                  const AppendEntriesRequest* request,
-                                                  AppendEntriesResponse* response,
-                                                  google::protobuf::Closure* done,
-                                                  int64_t local_last_index) {
+bool NodeImpl::handle_out_of_order_append_entries(
+    brpc::Controller* cntl, const AppendEntriesRequest* request,
+    AppendEntriesResponse* response, google::protobuf::Closure* done,
+    int64_t local_last_index) {
     if (!FLAGS_raft_enable_append_entries_cache ||
         local_last_index >= request->prev_log_index() ||
         request->entries_size() == 0) {
         return false;
     }
     if (!_append_entries_cache) {
-        _append_entries_cache = new AppendEntriesCache(this, ++_append_entries_cache_version);
+        _append_entries_cache =
+            new AppendEntriesCache(this, ++_append_entries_cache_version);
     }
     AppendEntriesRpc* rpc = new AppendEntriesRpc;
     rpc->cntl = cntl;
@@ -2957,7 +3015,8 @@ void NodeImpl::clear_append_entries_cache() {
 }
 
 void* NodeImpl::handle_append_entries_from_cache(void* arg) {
-    HandleAppendEntriesFromCacheArg* handle_arg = (HandleAppendEntriesFromCacheArg*)arg;
+    HandleAppendEntriesFromCacheArg* handle_arg =
+        (HandleAppendEntriesFromCacheArg*)arg;
     NodeImpl* node = handle_arg->node;
     butil::LinkedList<AppendEntriesRpc>& rpcs = handle_arg->rpcs;
     while (!rpcs.empty()) {
@@ -2974,9 +3033,9 @@ void* NodeImpl::handle_append_entries_from_cache(void* arg) {
 
 void NodeImpl::on_append_entries_cache_timedout(void* arg) {
     bthread_t tid;
-    if (bthread_start_background(
-                &tid, NULL, NodeImpl::handle_append_entries_cache_timedout,
-                arg) != 0) {
+    if (bthread_start_background(&tid, NULL,
+                                 NodeImpl::handle_append_entries_cache_timedout,
+                                 arg) != 0) {
         PLOG(ERROR) << "Fail to start bthread";
         NodeImpl::handle_append_entries_cache_timedout(arg);
     }
@@ -2995,9 +3054,10 @@ void* NodeImpl::handle_append_entries_cache_timedout(void* arg) {
 
     std::unique_lock<raft_mutex_t> lck(node->_mutex);
     if (node->_append_entries_cache &&
-        timer_arg->cache_version == node->_append_entries_cache->cache_version()) {
+        timer_arg->cache_version ==
+            node->_append_entries_cache->cache_version()) {
         node->_append_entries_cache->do_handle_append_entries_cache_timedout(
-                timer_arg->timer_version, timer_arg->timer_start_ms);
+            timer_arg->timer_version, timer_arg->timer_start_ms);
         if (node->_append_entries_cache->empty()) {
             delete node->_append_entries_cache;
             node->_append_entries_cache = NULL;
@@ -3019,9 +3079,7 @@ int64_t NodeImpl::AppendEntriesCache::cache_version() const {
     return _cache_version;
 }
 
-bool NodeImpl::AppendEntriesCache::empty() const {
-    return _rpc_map.empty();
-}
+bool NodeImpl::AppendEntriesCache::empty() const { return _rpc_map.empty(); }
 
 bool NodeImpl::AppendEntriesCache::store(AppendEntriesRpc* rpc) {
     if (!_rpc_map.empty()) {
@@ -3031,14 +3089,15 @@ bool NodeImpl::AppendEntriesCache::store(AppendEntriesRpc* rpc) {
         int64_t rpc_prev_index = rpc->request->prev_log_index();
         int64_t rpc_last_index = rpc_prev_index + rpc->request->entries_size();
 
-        // Some rpcs with the overlap log index alredy exist, means retransmission
-        // happend, simplely clean all out of order requests, and store the new
-        // one.
+        // Some rpcs with the overlap log index alredy exist, means
+        // retransmission happend, simplely clean all out of order requests, and
+        // store the new one.
         if (it != _rpc_map.begin()) {
             --it;
             AppendEntriesRpc* prev_rpc = it->second;
             if (prev_rpc->request->prev_log_index() +
-                prev_rpc->request->entries_size() > rpc_prev_index) {
+                    prev_rpc->request->entries_size() >
+                rpc_prev_index) {
                 need_clear = true;
             }
             ++it;
@@ -3082,17 +3141,19 @@ bool NodeImpl::AppendEntriesCache::store(AppendEntriesRpc* rpc) {
     return true;
 }
 
-void NodeImpl::AppendEntriesCache::process_runable_rpcs(int64_t local_last_index) {
+void NodeImpl::AppendEntriesCache::process_runable_rpcs(
+    int64_t local_last_index) {
     CHECK(!_rpc_map.empty());
     CHECK(!_rpc_queue.empty());
     HandleAppendEntriesFromCacheArg* arg = NULL;
     for (std::map<int64_t, AppendEntriesRpc*>::iterator it = _rpc_map.begin();
-        it != _rpc_map.end();) {
+         it != _rpc_map.end();) {
         AppendEntriesRpc* rpc = it->second;
         if (rpc->request->prev_log_index() > local_last_index) {
             break;
         }
-        local_last_index = rpc->request->prev_log_index() + rpc->request->entries_size();
+        local_last_index =
+            rpc->request->prev_log_index() + rpc->request->entries_size();
         _rpc_map.erase(it++);
         rpc->RemoveFromList();
         if (arg == NULL) {
@@ -3130,13 +3191,13 @@ void NodeImpl::AppendEntriesCache::ack_fail(AppendEntriesRpc* rpc) {
     delete rpc;
 }
 
-void NodeImpl::AppendEntriesCache::start_to_handle(HandleAppendEntriesFromCacheArg* arg) {
+void NodeImpl::AppendEntriesCache::start_to_handle(
+    HandleAppendEntriesFromCacheArg* arg) {
     _node->AddRef();
     bthread_t tid;
     // Sequence if not important
     if (bthread_start_background(
-                &tid, NULL, NodeImpl::handle_append_entries_from_cache,
-                arg) != 0) {
+            &tid, NULL, NodeImpl::handle_append_entries_from_cache, arg) != 0) {
         PLOG(ERROR) << "Fail to start bthread";
         // We cant't call NodeImpl::handle_append_entries_from_cache
         // here since we are in the mutex, which will cause dead lock, just
@@ -3160,12 +3221,12 @@ bool NodeImpl::AppendEntriesCache::start_timer() {
     timer_arg->cache_version = _cache_version;
     timer_arg->timer_start_ms = _rpc_queue.head()->value()->receive_time_ms;
     timespec duetime = butil::milliseconds_from(
-            butil::milliseconds_to_timespec(timer_arg->timer_start_ms),
-            std::max(_node->_options.election_timeout_ms >> 2, 1));
+        butil::milliseconds_to_timespec(timer_arg->timer_start_ms),
+        std::max(_node->_options.election_timeout_ms >> 2, 1));
     _node->AddRef();
-    if (bthread_timer_add(
-                &_timer, duetime, NodeImpl::on_append_entries_cache_timedout,
-                timer_arg) != 0) {
+    if (bthread_timer_add(&_timer, duetime,
+                          NodeImpl::on_append_entries_cache_timedout,
+                          timer_arg) != 0) {
         LOG(ERROR) << "Fail to add timer";
         delete timer_arg;
         _node->Release();
@@ -3186,14 +3247,14 @@ void NodeImpl::AppendEntriesCache::stop_timer() {
 }
 
 void NodeImpl::AppendEntriesCache::do_handle_append_entries_cache_timedout(
-        int64_t timer_version, int64_t timer_start_ms) {
+    int64_t timer_version, int64_t timer_start_ms) {
     if (timer_version != _timer_version) {
         return;
     }
     CHECK(!_rpc_map.empty());
     CHECK(!_rpc_queue.empty());
-    // If the head of out-of-order requests is not be handled, clear the entire cache,
-    // otherwise, start a new timer.
+    // If the head of out-of-order requests is not be handled, clear the entire
+    // cache, otherwise, start a new timer.
     if (_rpc_queue.head()->value()->receive_time_ms <= timer_start_ms) {
         clear();
         return;
@@ -3229,19 +3290,20 @@ void NodeImpl::ConfigurationCtx::start(const Configuration& old_conf,
     ss << ", begin caughtup.";
     LOG(INFO) << ss.str();
     adding.list_peers(&_adding_peers);
-    for (std::set<PeerId>::const_iterator iter
-            = _adding_peers.begin(); iter != _adding_peers.end(); ++iter) {
+    for (std::set<PeerId>::const_iterator iter = _adding_peers.begin();
+         iter != _adding_peers.end(); ++iter) {
         if (_node->_replicator_group.add_replicator(*iter) != 0) {
             LOG(ERROR) << "node " << _node->node_id()
                        << " start replicator failed, peer " << *iter;
             return on_caughtup(_version, *iter, false);
         }
-        OnCaughtUp* caught_up = new OnCaughtUp(
-                _node, _node->_current_term, *iter, _version);
+        OnCaughtUp* caught_up =
+            new OnCaughtUp(_node, _node->_current_term, *iter, _version);
         timespec due_time = butil::milliseconds_from_now(
-                _node->_options.get_catchup_timeout_ms());
+            _node->_options.get_catchup_timeout_ms());
         if (_node->_replicator_group.wait_caughtup(
-            *iter, _node->_options.catchup_margin, &due_time, caught_up) != 0) {
+                *iter, _node->_options.catchup_margin, &due_time, caught_up) !=
+            0) {
             LOG(WARNING) << "node " << _node->node_id()
                          << " wait_caughtup failed, peer " << *iter;
             delete caught_up;
@@ -3263,15 +3325,14 @@ void NodeImpl::ConfigurationCtx::flush(const Configuration& conf,
     }
     _node->unsafe_apply_configuration(conf, old_conf.empty() ? NULL : &old_conf,
                                       true);
-                                      
 }
 
-void NodeImpl::ConfigurationCtx::on_caughtup(
-        int64_t version, const PeerId& peer_id, bool succ) {
+void NodeImpl::ConfigurationCtx::on_caughtup(int64_t version,
+                                             const PeerId& peer_id, bool succ) {
     if (version != _version) {
         LOG(WARNING) << "Node " << _node->node_id()
-            << " on_caughtup with unmatched version=" << version
-            << ", expect version=" << _version;
+                     << " on_caughtup with unmatched version=" << version
+                     << ", expect version=" << _version;
         return;
     }
     CHECK_EQ(STAGE_CATCHING_UP, _stage);
@@ -3283,10 +3344,9 @@ void NodeImpl::ConfigurationCtx::on_caughtup(
         return;
     }
     // Fail
-    LOG(WARNING) << "Node " << _node->node_id()
-                 << " fail to catch up peer " << peer_id
-                 << " when trying to change peers from " 
-                 << Configuration(_old_peers) << " to " 
+    LOG(WARNING) << "Node " << _node->node_id() << " fail to catch up peer "
+                 << peer_id << " when trying to change peers from "
+                 << Configuration(_old_peers) << " to "
                  << Configuration(_new_peers);
     butil::Status err(ECATCHUP, "Peer %s failed to catch up",
                       peer_id.to_string().c_str());
@@ -3296,55 +3356,60 @@ void NodeImpl::ConfigurationCtx::on_caughtup(
 void NodeImpl::ConfigurationCtx::next_stage() {
     CHECK(is_busy());
     switch (_stage) {
-    case STAGE_CATCHING_UP:
-        if (_nchanges > 1) {
-            _stage = STAGE_JOINT;
-            Configuration old_conf(_old_peers);
-            return _node->unsafe_apply_configuration(
+        case STAGE_CATCHING_UP:
+            if (_nchanges > 1) {
+                _stage = STAGE_JOINT;
+                Configuration old_conf(_old_peers);
+                return _node->unsafe_apply_configuration(
                     Configuration(_new_peers), &old_conf, false);
-        }
-        // Skip joint consensus since only one peer has been changed here. Make
-        // it a one-stage change to be compitible with the legacy
-        // implementation.
-    case STAGE_JOINT:
-        _stage = STAGE_STABLE;
-        TEST_SYNC_POINT_CALLBACK("NodeImpl::ConfigurationCtx:StableStage:BeforeApplyConfiguration", _node);
-        return _node->unsafe_apply_configuration(
-                    Configuration(_new_peers), NULL, false);
-    case STAGE_STABLE:
-        {
-            bool should_step_down = 
+            }
+            // Skip joint consensus since only one peer has been changed here.
+            // Make it a one-stage change to be compitible with the legacy
+            // implementation.
+        case STAGE_JOINT:
+            _stage = STAGE_STABLE;
+            TEST_SYNC_POINT_CALLBACK(
+                "NodeImpl::ConfigurationCtx:StableStage:"
+                "BeforeApplyConfiguration",
+                _node);
+            return _node->unsafe_apply_configuration(Configuration(_new_peers),
+                                                     NULL, false);
+        case STAGE_STABLE: {
+            bool should_step_down =
                 _new_peers.find(_node->_server_id) == _new_peers.end();
             butil::Status st = butil::Status::OK();
             reset(&st);
             if (should_step_down) {
-                _node->step_down(_node->_current_term, true,
-                        butil::Status(ELEADERREMOVED, "This node was removed"));
+                _node->step_down(
+                    _node->_current_term, true,
+                    butil::Status(ELEADERREMOVED, "This node was removed"));
             }
             return;
         }
-    case STAGE_NONE:
-        CHECK(false) << "Can't reach here";
-        return;
+        case STAGE_NONE:
+            CHECK(false) << "Can't reach here";
+            return;
     }
 }
 
 void NodeImpl::ConfigurationCtx::reset(butil::Status* st) {
     // reset() should be called only once
     if (_stage == STAGE_NONE) {
-        BRAFT_VLOG << "node " << _node->node_id()
-                   << " reset ConfigurationCtx when stage is STAGE_NONE already";
+        BRAFT_VLOG
+            << "node " << _node->node_id()
+            << " reset ConfigurationCtx when stage is STAGE_NONE already";
         return;
     }
 
     LOG(INFO) << "node " << _node->node_id()
-              << " reset ConfigurationCtx, new_peers: " << Configuration(_new_peers)
+              << " reset ConfigurationCtx, new_peers: "
+              << Configuration(_new_peers)
               << ", old_peers: " << Configuration(_old_peers);
     if (st && st->ok()) {
         _node->stop_replicator(_new_peers, _old_peers);
     } else {
-        // leader step_down may stop replicators of catching up nodes, leading to
-        // run catchup_closure
+        // leader step_down may stop replicators of catching up nodes, leading
+        // to run catchup_closure
         _node->stop_replicator(_old_peers, _new_peers);
     }
     _new_peers.clear();
@@ -3368,7 +3433,7 @@ void NodeImpl::ConfigurationCtx::reset(butil::Status* st) {
 void NodeImpl::enter_readonly_mode() {
     BAIDU_SCOPED_LOCK(_mutex);
     if (!_node_readonly) {
-        LOG(INFO) << "node " << _group_id << ":" << _server_id 
+        LOG(INFO) << "node " << _group_id << ":" << _server_id
                   << " enter readonly mode";
         _node_readonly = true;
     }
@@ -3377,7 +3442,7 @@ void NodeImpl::enter_readonly_mode() {
 void NodeImpl::leave_readonly_mode() {
     BAIDU_SCOPED_LOCK(_mutex);
     if (_node_readonly) {
-        LOG(INFO) << "node " << _group_id << ":" << _server_id 
+        LOG(INFO) << "node " << _group_id << ":" << _server_id
                   << " leave readonly mode";
         _node_readonly = false;
     }
@@ -3388,7 +3453,8 @@ bool NodeImpl::readonly() {
     return _node_readonly || _majority_nodes_readonly;
 }
 
-int NodeImpl::change_readonly_config(int64_t term, const PeerId& peer_id, bool readonly) {
+int NodeImpl::change_readonly_config(int64_t term, const PeerId& peer_id,
+                                     bool readonly) {
     BAIDU_SCOPED_LOCK(_mutex);
     if (term != _current_term && _state != STATE_LEADER) {
         return EINVAL;
@@ -3411,7 +3477,7 @@ void NodeImpl::check_majority_nodes_readonly(const Configuration& conf) {
     size_t readonly_nodes = 0;
     for (size_t i = 0; i < peers.size(); i++) {
         if (peers[i] == _server_id) {
-            readonly_nodes += ((_node_readonly) ? 1: 0);
+            readonly_nodes += ((_node_readonly) ? 1 : 0);
             continue;
         }
         if (_replicator_group.readonly(peers[i])) {
@@ -3422,9 +3488,10 @@ void NodeImpl::check_majority_nodes_readonly(const Configuration& conf) {
     bool prev_readonly = _majority_nodes_readonly;
     _majority_nodes_readonly = !(writable_nodes >= (peers.size() / 2 + 1));
     if (prev_readonly != _majority_nodes_readonly) {
-        LOG(INFO) << "node " << _group_id << ":" << _server_id 
-                  << " majority readonly change from " << (prev_readonly ? "enable" : "disable")
-                  << " to " << (_majority_nodes_readonly ? " enable" : "disable");
+        LOG(INFO) << "node " << _group_id << ":" << _server_id
+                  << " majority readonly change from "
+                  << (prev_readonly ? "enable" : "disable") << " to "
+                  << (_majority_nodes_readonly ? " enable" : "disable");
     }
 }
 
@@ -3466,7 +3533,8 @@ void NodeImpl::get_leader_lease_status(LeaderLeaseStatus* lease_status) {
     int64_t last_active_timestamp = last_leader_active_timestamp();
     _leader_lease.renew(last_active_timestamp);
     _leader_lease.get_lease_info(&internal_info);
-    if (internal_info.state != LeaderLease::VALID && internal_info.state != LeaderLease::DISABLED) {
+    if (internal_info.state != LeaderLease::VALID &&
+        internal_info.state != LeaderLease::DISABLED) {
         butil::Status status;
         status.set_error(ERAFTTIMEDOUT, "Leader lease expired");
         step_down(_current_term, false, status);
@@ -3482,11 +3550,12 @@ void NodeImpl::get_leader_lease_status(LeaderLeaseStatus* lease_status) {
 
 void NodeImpl::VoteBallotCtx::init(NodeImpl* node, bool triggered) {
     reset(node);
-    _ballot.init(node->_conf.conf, std::optional<Configuration>() );
+    _ballot.init(node->_conf.conf, std::optional<Configuration>());
     _triggered = triggered;
 }
 
-void NodeImpl::VoteBallotCtx::start_grant_self_timer(int64_t wait_ms, NodeImpl* node) {
+void NodeImpl::VoteBallotCtx::start_grant_self_timer(int64_t wait_ms,
+                                                     NodeImpl* node) {
     timespec duetime = butil::milliseconds_from_now(wait_ms);
     GrantSelfArg* timer_arg = new GrantSelfArg;
     timer_arg->node = node;
@@ -3494,9 +3563,8 @@ void NodeImpl::VoteBallotCtx::start_grant_self_timer(int64_t wait_ms, NodeImpl* 
     timer_arg->vote_ctx = this;
     node->AddRef();
     _grant_self_arg = timer_arg;
-    if (bthread_timer_add(
-                &_timer, duetime, NodeImpl::on_grant_self_timedout,
-                timer_arg) != 0) {
+    if (bthread_timer_add(&_timer, duetime, NodeImpl::on_grant_self_timedout,
+                          timer_arg) != 0) {
         LOG(ERROR) << "Fail to add timer";
         delete timer_arg;
         _grant_self_arg = NULL;
@@ -3529,11 +3597,13 @@ void NodeImpl::VoteBallotCtx::reserve(const PeerId& peer) {
     _reserved_peers.insert(peer);
 }
 
-void NodeImpl::VoteBallotCtx::set_disrupted_leader(const DisruptedLeader& peer) {
+void NodeImpl::VoteBallotCtx::set_disrupted_leader(
+    const DisruptedLeader& peer) {
     _disrupted_leader = peer;
 }
 
-const NodeImpl::DisruptedLeader& NodeImpl::VoteBallotCtx::disrupted_leader() const {
+const NodeImpl::DisruptedLeader& NodeImpl::VoteBallotCtx::disrupted_leader()
+    const {
     return _disrupted_leader;
 }
 
@@ -3553,8 +3623,10 @@ const LogId& NodeImpl::VoteBallotCtx::last_log_id() const {
     return _last_log_id;
 }
 
-void NodeImpl::grant_self(VoteBallotCtx* vote_ctx, std::unique_lock<raft_mutex_t>* lck) {
-    // If follower lease expired, we can safely grant self. Otherwise, we wait util:
+void NodeImpl::grant_self(VoteBallotCtx* vote_ctx,
+                          std::unique_lock<raft_mutex_t>* lck) {
+    // If follower lease expired, we can safely grant self. Otherwise, we wait
+    // util:
     // 1. last active leader vote the node, and we grant two votes together;
     // 2. follower lease expire.
     int64_t wait_ms = _follower_lease.votable_time_from_now();
@@ -3576,18 +3648,17 @@ void NodeImpl::grant_self(VoteBallotCtx* vote_ctx, std::unique_lock<raft_mutex_t
 void NodeImpl::on_grant_self_timedout(void* arg) {
     bthread_t tid;
     if (bthread_start_background(
-                &tid, NULL, NodeImpl::handle_grant_self_timedout,
-                arg) != 0) {
+            &tid, NULL, NodeImpl::handle_grant_self_timedout, arg) != 0) {
         PLOG(ERROR) << "Fail to start bthread";
         NodeImpl::handle_grant_self_timedout(arg);
     }
 }
 
 void* NodeImpl::handle_grant_self_timedout(void* arg) {
-    GrantSelfArg*  grant_arg = (GrantSelfArg*)arg;
-    NodeImpl*      node = grant_arg->node;
+    GrantSelfArg* grant_arg = (GrantSelfArg*)arg;
+    NodeImpl* node = grant_arg->node;
     VoteBallotCtx* vote_ctx = grant_arg->vote_ctx;
-    int64_t        vote_ctx_version = grant_arg->vote_ctx_version;
+    int64_t vote_ctx_version = grant_arg->vote_ctx_version;
 
     delete grant_arg;
 
@@ -3607,23 +3678,22 @@ void* NodeImpl::handle_grant_self_timedout(void* arg) {
 void NodeImpl::leader_lease_start(int64_t lease_epoch) {
     BAIDU_SCOPED_LOCK(_mutex);
     if (_state == STATE_LEADER) {
-        _leader_lease.on_lease_start(
-                lease_epoch, last_leader_active_timestamp());
+        _leader_lease.on_lease_start(lease_epoch,
+                                     last_leader_active_timestamp());
     }
 }
 
 int64_t NodeImpl::last_leader_active_timestamp() {
     int64_t timestamp = last_leader_active_timestamp(_conf.conf);
     if (!_conf.old_conf.empty()) {
-        timestamp = std::min(timestamp, last_leader_active_timestamp(_conf.old_conf));
+        timestamp =
+            std::min(timestamp, last_leader_active_timestamp(_conf.old_conf));
     }
     return timestamp;
 }
 
 struct LastActiveTimestampCompare {
-    bool operator()(const int64_t& a, const int64_t& b) {
-        return a > b;
-    }
+    bool operator()(const int64_t& a, const int64_t& b) { return a > b; }
 };
 
 int64_t NodeImpl::last_leader_active_timestamp(const Configuration& conf) {
@@ -3638,9 +3708,11 @@ int64_t NodeImpl::last_leader_active_timestamp(const Configuration& conf) {
 
         int64_t timestamp = _replicator_group.last_rpc_send_timestamp(peers[i]);
         last_rpc_send_timestamps.push_back(timestamp);
-        std::push_heap(last_rpc_send_timestamps.begin(), last_rpc_send_timestamps.end(), compare);
+        std::push_heap(last_rpc_send_timestamps.begin(),
+                       last_rpc_send_timestamps.end(), compare);
         if (last_rpc_send_timestamps.size() > peers.size() / 2) {
-            std::pop_heap(last_rpc_send_timestamps.begin(), last_rpc_send_timestamps.end(), compare);
+            std::pop_heap(last_rpc_send_timestamps.begin(),
+                          last_rpc_send_timestamps.end(), compare);
             last_rpc_send_timestamps.pop_back();
         }
     }
@@ -3648,7 +3720,8 @@ int64_t NodeImpl::last_leader_active_timestamp(const Configuration& conf) {
     if (last_rpc_send_timestamps.empty()) {
         return butil::monotonic_time_ms();
     }
-    std::pop_heap(last_rpc_send_timestamps.begin(), last_rpc_send_timestamps.end(), compare);
+    std::pop_heap(last_rpc_send_timestamps.begin(),
+                  last_rpc_send_timestamps.end(), compare);
     return last_rpc_send_timestamps.back();
 }
 
@@ -3667,28 +3740,20 @@ void NodeTimer::on_destroy() {
     }
 }
 
-void ElectionTimer::run() {
-    _node->handle_election_timeout();
-}
+void ElectionTimer::run() { _node->handle_election_timeout(); }
 
 int ElectionTimer::adjust_timeout_ms(int timeout_ms) {
     return random_timeout(timeout_ms);
 }
 
-void VoteTimer::run() {
-    _node->handle_vote_timeout();
-}
+void VoteTimer::run() { _node->handle_vote_timeout(); }
 
 int VoteTimer::adjust_timeout_ms(int timeout_ms) {
     return random_timeout(timeout_ms);
 }
 
-void StepdownTimer::run() {
-    _node->handle_stepdown_timeout();
-}
+void StepdownTimer::run() { _node->handle_stepdown_timeout(); }
 
-void SnapshotTimer::run() {
-    _node->handle_snapshot_timeout();
-}
+void SnapshotTimer::run() { _node->handle_snapshot_timeout(); }
 
 }  //  namespace braft

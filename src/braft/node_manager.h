@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,11 +14,12 @@
 
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
-#ifndef  BRAFT_NODE_MANAGER_H
-#define  BRAFT_NODE_MANAGER_H
+#ifndef BRAFT_NODE_MANAGER_H
+#define BRAFT_NODE_MANAGER_H
 
-#include <butil/memory/singleton.h>
 #include <butil/containers/doubly_buffered_data.h>
+#include <butil/memory/singleton.h>
+
 #include "braft/raft.h"
 #include "braft/util.h"
 
@@ -27,10 +28,8 @@ namespace braft {
 class NodeImpl;
 
 class NodeManager {
-public:
-    static NodeManager* GetInstance() {
-        return Singleton<NodeManager>::get();
-    }
+   public:
+    static NodeManager* GetInstance() { return Singleton<NodeManager>::get(); }
 
     // add raft node
     bool add(NodeImpl* node);
@@ -42,14 +41,13 @@ public:
     scoped_refptr<NodeImpl> get(const GroupId& group_id, const PeerId& peer_id);
 
     // get all the nodes of |group_id|
-    void get_nodes_by_group_id(const GroupId& group_id, 
+    void get_nodes_by_group_id(const GroupId& group_id,
                                std::vector<scoped_refptr<NodeImpl> >* nodes);
 
     void get_all_nodes(std::vector<scoped_refptr<NodeImpl> >* nodes);
 
     // Add service to |server| at |listen_addr|
-    int add_service(brpc::Server* server, 
-                    const butil::EndPoint& listen_addr);
+    int add_service(brpc::Server* server, const butil::EndPoint& listen_addr);
 
     // Return true if |addr| is reachable by a RPC Server
     bool server_exists(butil::EndPoint addr);
@@ -57,17 +55,17 @@ public:
     // Remove the addr from _addr_set when the backing service is destroyed
     void remove_address(butil::EndPoint addr);
 
-private:
+   private:
     NodeManager();
     ~NodeManager();
     DISALLOW_COPY_AND_ASSIGN(NodeManager);
     friend struct DefaultSingletonTraits<NodeManager>;
-    
+
     // TODO(chenzhangyi01): replace std::map with FlatMap
     // To make implementation simplicity, we use two maps here, although
     // it works practically with only one GroupMap
     typedef std::map<NodeId, scoped_refptr<NodeImpl> > NodeMap;
-    typedef std::multimap<GroupId, NodeImpl* > GroupMap;
+    typedef std::multimap<GroupId, NodeImpl*> GroupMap;
     struct Maps {
         NodeMap node_map;
         GroupMap group_map;
@@ -84,6 +82,6 @@ private:
 
 #define global_node_manager NodeManager::GetInstance()
 
-}   //  namespace braft
+}  //  namespace braft
 
 #endif  // BRAFT_NODE_MANAGER_H

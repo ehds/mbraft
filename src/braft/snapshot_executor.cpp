@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,89 +15,84 @@
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
 #include "braft/snapshot_executor.h"
-#include "braft/util.h"
+
 #include "braft/node.h"
-#include "braft/storage.h"
 #include "braft/snapshot.h"
+#include "braft/storage.h"
+#include "braft/util.h"
 
 namespace braft {
 
-DEFINE_int32(raft_do_snapshot_min_index_gap, 1, 
+DEFINE_int32(raft_do_snapshot_min_index_gap, 1,
              "Will do snapshot only when actual gap between applied_index and"
              " last_snapshot_index is equal to or larger than this value");
 BRPC_VALIDATE_GFLAG(raft_do_snapshot_min_index_gap, brpc::PositiveInteger);
 
 class SaveSnapshotDone : public SaveSnapshotClosure {
-public:
-    SaveSnapshotDone(SnapshotExecutor* node, SnapshotWriter* writer, Closure* done);
+   public:
+    SaveSnapshotDone(SnapshotExecutor* node, SnapshotWriter* writer,
+                     Closure* done);
     virtual ~SaveSnapshotDone();
 
     SnapshotWriter* start(const SnapshotMeta& meta);
     virtual void Run();
- 
-private:
+
+   private:
     static void* continue_run(void* arg);
 
     SnapshotExecutor* _se;
     SnapshotWriter* _writer;
-    Closure* _done; // user done
+    Closure* _done;  // user done
     SnapshotMeta _meta;
 };
 
 class InstallSnapshotDone : public LoadSnapshotClosure {
-public:
-    InstallSnapshotDone(SnapshotExecutor* se,
-                        SnapshotReader* reader);
+   public:
+    InstallSnapshotDone(SnapshotExecutor* se, SnapshotReader* reader);
     virtual ~InstallSnapshotDone();
 
     SnapshotReader* start();
     virtual void Run();
-private:
+
+   private:
     SnapshotExecutor* _se;
     SnapshotReader* _reader;
 };
 
 class FirstSnapshotLoadDone : public LoadSnapshotClosure {
-public:
-    FirstSnapshotLoadDone(SnapshotExecutor* se,
-                          SnapshotReader* reader)
-        : _se(se)
-        , _reader(reader) {
-    }
-    ~FirstSnapshotLoadDone() {
-    }
+   public:
+    FirstSnapshotLoadDone(SnapshotExecutor* se, SnapshotReader* reader)
+        : _se(se), _reader(reader) {}
+    ~FirstSnapshotLoadDone() {}
 
     SnapshotReader* start() { return _reader; }
     void Run() {
         _se->on_snapshot_load_done(status());
         _event.signal();
     }
-    void wait_for_run() {
-        _event.wait();
-    }
-private:
+    void wait_for_run() { _event.wait(); }
+
+   private:
     SnapshotExecutor* _se;
     SnapshotReader* _reader;
     bthread::CountdownEvent _event;
 };
 
 SnapshotExecutor::SnapshotExecutor()
-    : _last_snapshot_term(0)
-    , _last_snapshot_index(0)
-    , _term(0)
-    , _saving_snapshot(false)
-    , _loading_snapshot(false)
-    , _stopped(false)
-    , _snapshot_storage(NULL)
-    , _cur_copier(NULL)
-    , _fsm_caller(NULL)
-    , _node(NULL)
-    , _log_manager(NULL)
-    , _downloading_snapshot(NULL)
-    , _running_jobs(0)
-    , _snapshot_throttle(NULL)
-{
-}
+    : _last_snapshot_term(0),
+      _last_snapshot_index(0),
+      _term(0),
+      _saving_snapshot(false),
+      _loading_snapshot(false),
+      _stopped(false),
+      _snapshot_storage(NULL),
+      _cur_copier(NULL),
+      _fsm_caller(NULL),
+      _node(NULL),
+      _log_manager(NULL),
+      _downloading_snapshot(NULL),
+      _running_jobs(0),
+      _snapshot_throttle(NULL) {}
 
 SnapshotExecutor::~SnapshotExecutor() {
     shutdown();
@@ -143,18 +138,19 @@ void SnapshotExecutor::do_snapshot(Closure* done) {
         return;
     }
     int64_t saved_fsm_applied_index = _fsm_caller->last_applied_index();
-    if (saved_fsm_applied_index - _last_snapshot_index < 
-                                        FLAGS_raft_do_snapshot_min_index_gap) {
+    if (saved_fsm_applied_index - _last_snapshot_index <
+        FLAGS_raft_do_snapshot_min_index_gap) {
         // There might be false positive as the last_applied_index() is being
         // updated. But it's fine since we will do next snapshot saving in a
         // predictable time.
         lck.unlock();
 
         _log_manager->clear_bufferred_logs();
-        LOG_IF(INFO, _node != NULL) << "node " << _node->node_id()
+        LOG_IF(INFO, _node != NULL)
+            << "node " << _node->node_id()
             << " the gap between fsm applied index " << saved_fsm_applied_index
             << " and last_snapshot_index " << saved_last_snapshot_index
-            << ", last_snapshot_term " << saved_last_snapshot_term 
+            << ", last_snapshot_term " << saved_last_snapshot_term
             << " is less than " << FLAGS_raft_do_snapshot_min_index_gap
             << ", will clear bufferred logs and return success";
 
@@ -163,7 +159,7 @@ void SnapshotExecutor::do_snapshot(Closure* done) {
         }
         return;
     }
-    
+
     SnapshotWriter* writer = _snapshot_storage->create();
     if (!writer) {
         lck.unlock();
@@ -175,11 +171,13 @@ void SnapshotExecutor::do_snapshot(Closure* done) {
         return;
     }
     _saving_snapshot = true;
-    SaveSnapshotDone* snapshot_save_done = new SaveSnapshotDone(this, writer, done);
+    SaveSnapshotDone* snapshot_save_done =
+        new SaveSnapshotDone(this, writer, done);
     if (_fsm_caller->on_snapshot_save(snapshot_save_done) != 0) {
         lck.unlock();
         if (done) {
-            snapshot_save_done->status().set_error(EHOSTDOWN, "The raft node is down");
+            snapshot_save_done->status().set_error(EHOSTDOWN,
+                                                   "The raft node is down");
             run_closure_in_bthread(snapshot_save_done, _usercode_in_pthread);
         }
         return;
@@ -187,27 +185,30 @@ void SnapshotExecutor::do_snapshot(Closure* done) {
     _running_jobs.add_count(1);
 }
 
-int SnapshotExecutor::on_snapshot_save_done(
-    const butil::Status& st, const SnapshotMeta& meta, SnapshotWriter* writer) {
+int SnapshotExecutor::on_snapshot_save_done(const butil::Status& st,
+                                            const SnapshotMeta& meta,
+                                            SnapshotWriter* writer) {
     std::unique_lock<raft_mutex_t> lck(_mutex);
     int ret = st.error_code();
-    // InstallSnapshot can break SaveSnapshot, check InstallSnapshot when SaveSnapshot
-    // because upstream Snapshot maybe newer than local Snapshot.
+    // InstallSnapshot can break SaveSnapshot, check InstallSnapshot when
+    // SaveSnapshot because upstream Snapshot maybe newer than local Snapshot.
     if (st.ok()) {
         if (meta.last_included_index() <= _last_snapshot_index) {
             ret = ESTALE;
-            LOG_IF(WARNING, _node != NULL) << "node " << _node->node_id()
-                << " discards an stale snapshot "
+            LOG_IF(WARNING, _node != NULL)
+                << "node " << _node->node_id() << " discards an stale snapshot "
                 << " last_included_index " << meta.last_included_index()
                 << " last_snapshot_index " << _last_snapshot_index;
-            writer->set_error(ESTALE, "Installing snapshot is older than local snapshot");
+            writer->set_error(
+                ESTALE, "Installing snapshot is older than local snapshot");
         }
     }
     lck.unlock();
-    
+
     if (ret == 0) {
         if (writer->save_meta(meta)) {
-            LOG(WARNING) << "node " << _node->node_id() << " fail to save snapshot";    
+            LOG(WARNING) << "node " << _node->node_id()
+                         << " fail to save snapshot";
             ret = EIO;
         }
     } else {
@@ -230,8 +231,9 @@ int SnapshotExecutor::on_snapshot_save_done(
         _last_snapshot_index = meta.last_included_index();
         _last_snapshot_term = meta.last_included_term();
         lck.unlock();
-        ss << "snapshot_save_done, last_included_index=" << meta.last_included_index()
-           << " last_included_term=" << meta.last_included_term(); 
+        ss << "snapshot_save_done, last_included_index="
+           << meta.last_included_index()
+           << " last_included_term=" << meta.last_included_term();
         LOG(INFO) << ss.str();
         _log_manager->set_snapshot(&meta);
         lck.lock();
@@ -249,7 +251,8 @@ void SnapshotExecutor::on_snapshot_load_done(const butil::Status& st) {
     std::unique_lock<raft_mutex_t> lck(_mutex);
 
     CHECK(_loading_snapshot);
-    DownloadingSnapshot* m = _downloading_snapshot.load(butil::memory_order_relaxed);
+    DownloadingSnapshot* m =
+        _downloading_snapshot.load(butil::memory_order_relaxed);
 
     if (st.ok()) {
         _last_snapshot_index = _loading_snapshot_meta.last_included_index();
@@ -260,8 +263,7 @@ void SnapshotExecutor::on_snapshot_load_done(const butil::Status& st) {
     if (_node) {
         ss << "node " << _node->node_id() << ' ';
     }
-    ss << "snapshot_load_done, "
-              << _loading_snapshot_meta.ShortDebugString();
+    ss << "snapshot_load_done, " << _loading_snapshot_meta.ShortDebugString();
     LOG(INFO) << ss.str();
     lck.unlock();
     if (_node) {
@@ -285,8 +287,7 @@ void SnapshotExecutor::on_snapshot_load_done(const butil::Status& st) {
     _running_jobs.signal();
 }
 
-SaveSnapshotDone::SaveSnapshotDone(SnapshotExecutor* se, 
-                                   SnapshotWriter* writer, 
+SaveSnapshotDone::SaveSnapshotDone(SnapshotExecutor* se, SnapshotWriter* writer,
                                    Closure* done)
     : _se(se), _writer(writer), _done(done) {
     // here AddRef, SaveSnapshot maybe async
@@ -310,12 +311,12 @@ void* SaveSnapshotDone::continue_run(void* arg) {
     SaveSnapshotDone* self = (SaveSnapshotDone*)arg;
     std::unique_ptr<SaveSnapshotDone> self_guard(self);
     // Must call on_snapshot_save_done to clear _saving_snapshot
-    int ret = self->_se->on_snapshot_save_done(
-        self->status(), self->_meta, self->_writer);
+    int ret = self->_se->on_snapshot_save_done(self->status(), self->_meta,
+                                               self->_writer);
     if (ret != 0 && self->status().ok()) {
         self->status().set_error(ret, "node call on_snapshot_save_done failed");
     }
-    //user done, need set error
+    // user done, need set error
     if (self->_done) {
         self->_done->status() = self->status();
     }
@@ -351,8 +352,8 @@ int SnapshotExecutor::init(const SnapshotExecutorOptions& options) {
 
     _snapshot_storage = SnapshotStorage::create(options.uri);
     if (!_snapshot_storage) {
-        LOG(ERROR)  << "node " << _node->node_id() 
-                    << " fail to find snapshot storage, uri " << options.uri;
+        LOG(ERROR) << "node " << _node->node_id()
+                   << " fail to find snapshot storage, uri " << options.uri;
         return -1;
     }
     if (options.filter_before_copy_remote) {
@@ -366,11 +367,12 @@ int SnapshotExecutor::init(const SnapshotExecutorOptions& options) {
         _snapshot_storage->set_snapshot_throttle(options.snapshot_throttle);
     }
     if (_snapshot_storage->init() != 0) {
-        LOG(ERROR) << "node " << _node->node_id() 
+        LOG(ERROR) << "node " << _node->node_id()
                    << " fail to init snapshot storage, uri " << options.uri;
         return -1;
     }
-    LocalSnapshotStorage* tmp = dynamic_cast<LocalSnapshotStorage*>(_snapshot_storage);
+    LocalSnapshotStorage* tmp =
+        dynamic_cast<LocalSnapshotStorage*>(_snapshot_storage);
     if (tmp != NULL && !tmp->has_server_addr()) {
         tmp->set_server_addr(options.addr);
     }
@@ -408,7 +410,7 @@ void SnapshotExecutor::install_snapshot(brpc::Controller* cntl,
     brpc::ClosureGuard done_guard(done);
     SnapshotMeta meta = request->meta();
 
-    // check if install_snapshot tasks num exceeds threshold 
+    // check if install_snapshot tasks num exceeds threshold
     if (_snapshot_throttle && !_snapshot_throttle->add_one_more_task(false)) {
         LOG(WARNING) << "Fail to install snapshot";
         cntl->SetFailed(EBUSY, "Fail to add install_snapshot tasks now");
@@ -443,7 +445,8 @@ void SnapshotExecutor::install_snapshot(brpc::Controller* cntl,
     done_guard.release();
     CHECK(_cur_copier);
     _cur_copier->join();
-    // when copying finished or canceled, more install_snapshot tasks are allowed
+    // when copying finished or canceled, more install_snapshot tasks are
+    // allowed
     if (_snapshot_throttle) {
         _snapshot_throttle->finish_one_task(false);
     }
@@ -460,8 +463,8 @@ void SnapshotExecutor::load_downloading_snapshot(DownloadingSnapshot* ds,
     SnapshotReader* reader = _cur_copier->get_reader();
     if (!_cur_copier->ok()) {
         if (_cur_copier->error_code() == EIO) {
-            report_error(_cur_copier->error_code(), 
-                         "%s", _cur_copier->error_cstr());
+            report_error(_cur_copier->error_code(), "%s",
+                         _cur_copier->error_cstr());
         }
         if (reader) {
             _snapshot_storage->close(reader);
@@ -484,8 +487,7 @@ void SnapshotExecutor::load_downloading_snapshot(DownloadingSnapshot* ds,
         }
         _downloading_snapshot.store(NULL, butil::memory_order_release);
         lck.unlock();
-        ds->cntl->SetFailed(brpc::EINTERNAL, 
-                           "Fail to copy snapshot from %s",
+        ds->cntl->SetFailed(brpc::EINTERNAL, "Fail to copy snapshot from %s",
                             ds->request->uri().c_str());
         _running_jobs.signal();
         return;
@@ -498,11 +500,13 @@ void SnapshotExecutor::load_downloading_snapshot(DownloadingSnapshot* ds,
     _loading_snapshot_meta = meta;
     lck.unlock();
     InstallSnapshotDone* install_snapshot_done =
-            new InstallSnapshotDone(this, reader);
+        new InstallSnapshotDone(this, reader);
     int ret = _fsm_caller->on_snapshot_load(install_snapshot_done);
     if (ret != 0) {
-        LOG(WARNING) << "node " << _node->node_id() << " fail to call on_snapshot_load";
-        install_snapshot_done->status().set_error(EHOSTDOWN, "This raft node is down");
+        LOG(WARNING) << "node " << _node->node_id()
+                     << " fail to call on_snapshot_load";
+        install_snapshot_done->status().set_error(EHOSTDOWN,
+                                                  "This raft node is down");
         return install_snapshot_done->Run();
     }
 }
@@ -532,8 +536,8 @@ int SnapshotExecutor::register_downloading_snapshot(DownloadingSnapshot* ds) {
         ds->cntl->SetFailed(EBUSY, "Is saving snapshot");
         return -1;
     }
-    DownloadingSnapshot* m = _downloading_snapshot.load(
-            butil::memory_order_relaxed);
+    DownloadingSnapshot* m =
+        _downloading_snapshot.load(butil::memory_order_relaxed);
     if (!m) {
         _downloading_snapshot.store(ds, butil::memory_order_relaxed);
         // Now this session has the right to download the snapshot.
@@ -556,8 +560,8 @@ int SnapshotExecutor::register_downloading_snapshot(DownloadingSnapshot* ds) {
     // A previouse snapshot is under installing, check if this is the same
     // snapshot and resume it, otherwise drop previous snapshot as this one is
     // newer
-    if (m->request->meta().last_included_index() 
-            == ds->request->meta().last_included_index()) {
+    if (m->request->meta().last_included_index() ==
+        ds->request->meta().last_included_index()) {
         // m is a retry
         has_saved = true;
         // Copy |*ds| to |*m| so that the former session would respond
@@ -565,8 +569,8 @@ int SnapshotExecutor::register_downloading_snapshot(DownloadingSnapshot* ds) {
         saved = *m;
         *m = *ds;
         rc = 1;
-    } else if (m->request->meta().last_included_index() 
-            > ds->request->meta().last_included_index()) {
+    } else if (m->request->meta().last_included_index() >
+               ds->request->meta().last_included_index()) {
         // |ds| is older
         LOG(WARNING) << "Register failed: is installing a newer one.";
         ds->cntl->SetFailed(EINVAL, "A newer snapshot is under installing");
@@ -581,18 +585,21 @@ int SnapshotExecutor::register_downloading_snapshot(DownloadingSnapshot* ds) {
         }
         CHECK(_cur_copier);
         _cur_copier->cancel();
-        LOG(WARNING) << "Register failed: an older snapshot is under installing,"
-            " cancle downloading.";
-        ds->cntl->SetFailed(EBUSY, "A former snapshot is under installing, "
-                                   " trying to cancel");
+        LOG(WARNING)
+            << "Register failed: an older snapshot is under installing,"
+               " cancle downloading.";
+        ds->cntl->SetFailed(EBUSY,
+                            "A former snapshot is under installing, "
+                            " trying to cancel");
         return -1;
     }
     lck.unlock();
     if (has_saved) {
         // Respond replaced session
-        LOG(WARNING) << "Register failed: interrupted by retry installing request.";
+        LOG(WARNING)
+            << "Register failed: interrupted by retry installing request.";
         saved.cntl->SetFailed(
-                EINTR, "Interrupted by the retry InstallSnapshotRequest");
+            EINTR, "Interrupted by the retry InstallSnapshotRequest");
         saved.done->Run();
     }
     return rc;
@@ -615,9 +622,9 @@ void SnapshotExecutor::interrupt_downloading_snapshot(int64_t new_term) {
     if (_node) {
         ss << "node " << _node->node_id() << ' ';
     }
-    ss << "Trying to cancel downloading snapshot : " 
+    ss << "Trying to cancel downloading snapshot : "
        << _downloading_snapshot.load(butil::memory_order_relaxed)
-          ->request->ShortDebugString();
+              ->request->ShortDebugString();
     LOG(INFO) << ss.str();
 }
 
@@ -631,7 +638,7 @@ void SnapshotExecutor::report_error(int error_code, const char* fmt, ...) {
     _fsm_caller->on_error(e);
 }
 
-void SnapshotExecutor::describe(std::ostream&os, bool use_html) {
+void SnapshotExecutor::describe(std::ostream& os, bool use_html) {
     SnapshotMeta meta;
     InstallSnapshotRequest request;
     std::unique_lock<raft_mutex_t> lck(_mutex);
@@ -641,19 +648,19 @@ void SnapshotExecutor::describe(std::ostream&os, bool use_html) {
     if (is_loading_snapshot) {
         meta = _loading_snapshot_meta;
         //   ^
-        //   Cloning Configuration is expansive, since snapshot is not the hot spot,
-        //   we think it's fine
+        //   Cloning Configuration is expansive, since snapshot is not the hot
+        //   spot, we think it's fine
     }
-    const DownloadingSnapshot* m = 
-            _downloading_snapshot.load(butil::memory_order_acquire);
+    const DownloadingSnapshot* m =
+        _downloading_snapshot.load(butil::memory_order_acquire);
     if (m) {
         request.CopyFrom(*m->request);
-             // ^ It's also a little expansive, but fine
+        // ^ It's also a little expansive, but fine
     }
     const bool is_saving_snapshot = _saving_snapshot;
     // TODO: add timestamp of snapshot
     lck.unlock();
-    const char *newline = use_html ? "<br>" : "\r\n";
+    const char* newline = use_html ? "<br>" : "\r\n";
     os << "last_snapshot_index: " << last_snapshot_index << newline;
     os << "last_snapshot_term: " << last_snapshot_term << newline;
     if (m && is_loading_snapshot) {
@@ -665,7 +672,8 @@ void SnapshotExecutor::describe(std::ostream&os, bool use_html) {
         CHECK(!is_saving_snapshot);
         os << "snapshot_status: DOWNLOADING" << newline;
         os << "downloading_snapshot_from: " << request.uri() << newline;
-        os << "downloading_snapshot_meta: " << request.meta().ShortDebugString();
+        os << "downloading_snapshot_meta: "
+           << request.meta().ShortDebugString();
     } else if (is_saving_snapshot) {
         os << "snapshot_status: SAVING" << newline;
     } else {
@@ -686,10 +694,11 @@ void SnapshotExecutor::join() {
     _running_jobs.wait();
 }
 
-InstallSnapshotDone::InstallSnapshotDone(SnapshotExecutor* se, 
+InstallSnapshotDone::InstallSnapshotDone(SnapshotExecutor* se,
                                          SnapshotReader* reader)
-    : _se(se) , _reader(reader) {
-    // node not need AddRef, FSMCaller::shutdown will flush running InstallSnapshot task
+    : _se(se), _reader(reader) {
+    // node not need AddRef, FSMCaller::shutdown will flush running
+    // InstallSnapshot task
 }
 
 InstallSnapshotDone::~InstallSnapshotDone() {
@@ -698,9 +707,7 @@ InstallSnapshotDone::~InstallSnapshotDone() {
     }
 }
 
-SnapshotReader* InstallSnapshotDone::start() {
-    return _reader;
-}
+SnapshotReader* InstallSnapshotDone::start() { return _reader; }
 
 void InstallSnapshotDone::Run() {
     _se->on_snapshot_load_done(status());

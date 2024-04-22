@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,11 +16,13 @@
 //          Wang,Yao(wangyao02@baidu.com)
 
 #include "braft/util.h"
+
+#include <butil/file_util.h>
+#include <butil/macros.h>
+#include <butil/raw_pack.h>  // butil::RawPacker
 #include <gflags/gflags.h>
 #include <stdlib.h>
-#include <butil/macros.h>
-#include <butil/raw_pack.h>                     // butil::RawPacker
-#include <butil/file_util.h>
+
 #include "braft/raft.h"
 
 namespace bvar {
@@ -35,12 +37,12 @@ static bool valid_percentile(const char*, int32_t v) {
     return v > 0 && v < 100;
 }
 
-const bool ALLOW_UNUSED dummy_bvar_counter_p1 = GFLAGS_NS::RegisterFlagValidator(
-    &FLAGS_bvar_counter_p1, valid_percentile);
-const bool ALLOW_UNUSED dummy_bvar_counter_p2 = GFLAGS_NS::RegisterFlagValidator(
-    &FLAGS_bvar_counter_p2, valid_percentile);
-const bool ALLOW_UNUSED dummy_bvar_counter_p3 = GFLAGS_NS::RegisterFlagValidator(
-    &FLAGS_bvar_counter_p3, valid_percentile);
+const bool ALLOW_UNUSED dummy_bvar_counter_p1 =
+    GFLAGS_NS::RegisterFlagValidator(&FLAGS_bvar_counter_p1, valid_percentile);
+const bool ALLOW_UNUSED dummy_bvar_counter_p2 =
+    GFLAGS_NS::RegisterFlagValidator(&FLAGS_bvar_counter_p2, valid_percentile);
+const bool ALLOW_UNUSED dummy_bvar_counter_p3 =
+    GFLAGS_NS::RegisterFlagValidator(&FLAGS_bvar_counter_p3, valid_percentile);
 
 namespace detail {
 
@@ -71,8 +73,8 @@ static CombinedPercentileSamples* combine(PercentileWindow* w) {
 
 template <int64_t numerator, int64_t denominator>
 static int64_t get_counter_percetile(void* arg) {
-    return ((CounterRecorder*)arg)->counter_percentile(
-            (double)numerator / double(denominator));
+    return ((CounterRecorder*)arg)
+        ->counter_percentile((double)numerator / double(denominator));
 }
 
 static int64_t get_p1_counter(void* arg) {
@@ -88,7 +90,7 @@ static int64_t get_p3_counter(void* arg) {
     return cr->counter_percentile(FLAGS_bvar_counter_p3 / 100.0);
 }
 
-static Vector<int64_t, 4> get_counters(void *arg) {
+static Vector<int64_t, 4> get_counters(void* arg) {
     std::unique_ptr<CombinedPercentileSamples> cb(
         combine((PercentileWindow*)arg));
     // NOTE: We don't show 99.99% since it's often significantly larger than
@@ -103,20 +105,19 @@ static Vector<int64_t, 4> get_counters(void *arg) {
 }
 
 CounterRecorderBase::CounterRecorderBase(time_t window_size)
-    : _max_counter()
-    , _avg_counter_window(&_avg_counter, window_size)
-    , _max_counter_window(&_max_counter, window_size)
-    , _counter_percentile_window(&_counter_percentile, window_size)
-    , _total_times(get_recorder_count, &_avg_counter)
-    , _qps(get_window_recorder_qps, &_avg_counter_window)
-    , _counter_p1(get_p1_counter, this)
-    , _counter_p2(get_p2_counter, this)
-    , _counter_p3(get_p3_counter, this)
-    , _counter_999(get_counter_percetile<999, 1000>, this)
-    , _counter_9999(get_counter_percetile<9999, 10000>, this)
-    , _counter_cdf(&_counter_percentile_window)
-    , _counter_percentiles(get_counters, &_counter_percentile_window)
-{}
+    : _max_counter(),
+      _avg_counter_window(&_avg_counter, window_size),
+      _max_counter_window(&_max_counter, window_size),
+      _counter_percentile_window(&_counter_percentile, window_size),
+      _total_times(get_recorder_count, &_avg_counter),
+      _qps(get_window_recorder_qps, &_avg_counter_window),
+      _counter_p1(get_p1_counter, this),
+      _counter_p2(get_p2_counter, this),
+      _counter_p3(get_p3_counter, this),
+      _counter_999(get_counter_percetile<999, 1000>, this),
+      _counter_9999(get_counter_percetile<9999, 10000>, this),
+      _counter_cdf(&_counter_percentile_window),
+      _counter_percentiles(get_counters, &_counter_percentile_window) {}
 
 }  // namespace detail
 
@@ -156,7 +157,7 @@ int CounterRecorder::expose(const butil::StringPiece& prefix1,
     if (!prefix1.empty()) {
         tmp.reserve(prefix1.size() + prefix.size() + 1);
         tmp.append(prefix1.data(), prefix1.size());
-        tmp.push_back('_'); // prefix1 ending with _ is good.
+        tmp.push_back('_');  // prefix1 ending with _ is good.
         tmp.append(prefix.data(), prefix.size());
         prefix = tmp;
     }
@@ -178,19 +179,23 @@ int CounterRecorder::expose(const butil::StringPiece& prefix1,
         return -1;
     }
     char namebuf[32];
-    snprintf(namebuf, sizeof(namebuf), "counter_%d", (int)FLAGS_bvar_counter_p1);
+    snprintf(namebuf, sizeof(namebuf), "counter_%d",
+             (int)FLAGS_bvar_counter_p1);
     if (_counter_p1.expose_as(prefix, namebuf, DISPLAY_ON_PLAIN_TEXT) != 0) {
         return -1;
     }
-    snprintf(namebuf, sizeof(namebuf), "counter_%d", (int)FLAGS_bvar_counter_p2);
+    snprintf(namebuf, sizeof(namebuf), "counter_%d",
+             (int)FLAGS_bvar_counter_p2);
     if (_counter_p2.expose_as(prefix, namebuf, DISPLAY_ON_PLAIN_TEXT) != 0) {
         return -1;
     }
-    snprintf(namebuf, sizeof(namebuf), "counter_%u", (int)FLAGS_bvar_counter_p3);
+    snprintf(namebuf, sizeof(namebuf), "counter_%u",
+             (int)FLAGS_bvar_counter_p3);
     if (_counter_p3.expose_as(prefix, namebuf, DISPLAY_ON_PLAIN_TEXT) != 0) {
         return -1;
     }
-    if (_counter_999.expose_as(prefix, "counter_999", DISPLAY_ON_PLAIN_TEXT) != 0) {
+    if (_counter_999.expose_as(prefix, "counter_999", DISPLAY_ON_PLAIN_TEXT) !=
+        0) {
         return -1;
     }
     if (_counter_9999.expose_as(prefix, "counter_9999") != 0) {
@@ -199,7 +204,8 @@ int CounterRecorder::expose(const butil::StringPiece& prefix1,
     if (_counter_cdf.expose_as(prefix, "counter_cdf", DISPLAY_ON_HTML) != 0) {
         return -1;
     }
-    if (_counter_percentiles.expose_as(prefix, "counter_percentiles", DISPLAY_ON_HTML) != 0) {
+    if (_counter_percentiles.expose_as(prefix, "counter_percentiles",
+                                       DISPLAY_ON_HTML) != 0) {
         return -1;
     }
     snprintf(namebuf, sizeof(namebuf), "%d%%,%d%%,%d%%,99.9%%",
@@ -237,19 +243,17 @@ CounterRecorder& CounterRecorder::operator<<(int64_t count_num) {
 }
 
 std::ostream& operator<<(std::ostream& os, const CounterRecorder& rec) {
-    return os << "{avg=" << rec.avg_counter()
-              << " max" << rec.window_size() << '=' << rec.max_counter()
-              << " qps=" << rec.qps()
+    return os << "{avg=" << rec.avg_counter() << " max" << rec.window_size()
+              << '=' << rec.max_counter() << " qps=" << rec.qps()
               << " count=" << rec.total_times() << '}';
 }
 
 }  // namespace bvar
 
-
 namespace braft {
 
 static void* run_closure(void* arg) {
-    ::google::protobuf::Closure *c = (google::protobuf::Closure*)arg;
+    ::google::protobuf::Closure* c = (google::protobuf::Closure*)arg;
     if (c) {
         c->Run();
     }
@@ -260,8 +264,8 @@ void run_closure_in_bthread(google::protobuf::Closure* closure,
                             bool in_pthread) {
     DCHECK(closure);
     bthread_t tid;
-    bthread_attr_t attr = (in_pthread) 
-                          ? BTHREAD_ATTR_PTHREAD : BTHREAD_ATTR_NORMAL;
+    bthread_attr_t attr =
+        (in_pthread) ? BTHREAD_ATTR_PTHREAD : BTHREAD_ATTR_NORMAL;
     int ret = bthread_start_background(&tid, &attr, run_closure, closure);
     if (0 != ret) {
         PLOG(ERROR) << "Fail to start bthread";
@@ -273,9 +277,9 @@ void run_closure_in_bthread_nosig(google::protobuf::Closure* closure,
                                   bool in_pthread) {
     DCHECK(closure);
     bthread_t tid;
-    bthread_attr_t attr = (in_pthread) 
-                          ? BTHREAD_ATTR_PTHREAD : BTHREAD_ATTR_NORMAL;
-    attr =  attr | BTHREAD_NOSIGNAL;
+    bthread_attr_t attr =
+        (in_pthread) ? BTHREAD_ATTR_PTHREAD : BTHREAD_ATTR_NORMAL;
+    attr = attr | BTHREAD_NOSIGNAL;
     int ret = bthread_start_background(&tid, &attr, run_closure, closure);
     if (0 != ret) {
         PLOG(ERROR) << "Fail to start bthread";
@@ -288,7 +292,7 @@ ssize_t file_pread(butil::IOPortal* portal, int fd, off_t offset, size_t size) {
     ssize_t left = size;
     while (left > 0) {
         ssize_t read_len = portal->pappend_from_file_descriptor(
-                fd, offset, static_cast<size_t>(left));
+            fd, offset, static_cast<size_t>(left));
         if (read_len > 0) {
             left -= read_len;
             offset += read_len;
@@ -297,8 +301,8 @@ ssize_t file_pread(butil::IOPortal* portal, int fd, off_t offset, size_t size) {
         } else if (errno == EINTR) {
             continue;
         } else {
-            LOG(WARNING) << "read failed, err: " << berror()
-                << " fd: " << fd << " offset: " << orig_offset << " size: " << size;
+            LOG(WARNING) << "read failed, err: " << berror() << " fd: " << fd
+                         << " offset: " << orig_offset << " size: " << size;
             return -1;
         }
     }
@@ -312,15 +316,16 @@ ssize_t file_pwrite(const butil::IOBuf& data, int fd, off_t offset) {
     off_t orig_offset = offset;
     ssize_t left = size;
     while (left > 0) {
-        ssize_t written = piece_data.pcut_into_file_descriptor(fd, offset, left);
+        ssize_t written =
+            piece_data.pcut_into_file_descriptor(fd, offset, left);
         if (written >= 0) {
             offset += written;
             left -= written;
         } else if (errno == EINTR) {
             continue;
         } else {
-            LOG(WARNING) << "write falied, err: " << berror()
-                << " fd: " << fd << " offset: " << orig_offset << " size: " << size;
+            LOG(WARNING) << "write falied, err: " << berror() << " fd: " << fd
+                         << " offset: " << orig_offset << " size: " << size;
             return -1;
         }
     }
@@ -400,7 +405,8 @@ size_t FileSegData::next(uint64_t* offset, butil::IOBuf* data) {
 
     *offset = seg_offset;
     size_t body_len = _data.cutn(data, seg_len);
-    CHECK_EQ(body_len, seg_len) << "seg_len: " << seg_len << " body_len: " << body_len;
+    CHECK_EQ(body_len, seg_len)
+        << "seg_len: " << seg_len << " body_len: " << body_len;
     return seg_len;
 }
 

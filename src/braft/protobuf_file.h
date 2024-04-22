@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,8 +17,10 @@
 #ifndef BRAFT_PROTOBUF_FILE_H
 #define BRAFT_PROTOBUF_FILE_H
 
-#include <string>
 #include <google/protobuf/message.h>
+
+#include <string>
+
 #include "braft/file_system_adaptor.h"
 
 namespace braft {
@@ -27,7 +29,7 @@ namespace braft {
 // len [4B, in network order]
 // protobuf data
 class ProtoBufFile {
-public:
+   public:
     ProtoBufFile(const char* path, FileSystemAdaptor* fs = NULL);
     ProtoBufFile(const std::string& path, FileSystemAdaptor* fs = NULL);
     ~ProtoBufFile() {}
@@ -35,11 +37,11 @@ public:
     int save(const ::google::protobuf::Message* message, bool sync);
     int load(::google::protobuf::Message* message);
 
-private:
+   private:
     std::string _path;
     scoped_refptr<FileSystemAdaptor> _fs;
 };
 
-}
+}  // namespace braft
 
-#endif //~BRAFT_PROTOBUF_FILE_H
+#endif  //~BRAFT_PROTOBUF_FILE_H
