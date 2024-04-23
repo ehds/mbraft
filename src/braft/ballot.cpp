@@ -16,12 +16,16 @@
 
 #include "braft/ballot.h"
 
+#include <algorithm>
 #include <cassert>
+#include <iterator>
+
 #include "braft/configuration.h"
 
 namespace braft {
 
-void Ballot::init(const Configuration& conf, std::optional<const Configuration> old_conf) {
+void Ballot::init(const Configuration& conf,
+                  std::optional<const Configuration> old_conf) {
     _peers.clear();
     _old_peers.clear();
     _quorum = 0;
@@ -29,18 +33,15 @@ void Ballot::init(const Configuration& conf, std::optional<const Configuration> 
 
     CHECK_GT(conf.size(), 0);
     _peers.reserve(conf.size());
-    for (auto iter = conf.begin(); iter != conf.end(); ++iter) {
-        _peers.push_back(*iter);
-    }
+    std::copy(conf.begin(), conf.end(), std::back_inserter(_peers));
     _quorum = _peers.size() / 2 + 1;
+
     if (!old_conf.has_value()) {
         return;
     }
     _old_peers.reserve(old_conf->size());
-    for (Configuration::const_iterator iter = old_conf->begin();
-         iter != old_conf->end(); ++iter) {
-        _old_peers.push_back(*iter);
-    }
+    std::copy(old_conf->begin(), old_conf->end(),
+              std::back_inserter(_old_peers));
     _old_quorum = _old_peers.size() / 2 + 1;
 }
 

@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -17,39 +17,39 @@
 
 #include "braft/log_manager.h"
 
-#include <butil/logging.h>                       // LOG
-#include <butil/object_pool.h>                   // butil::get_object
-#include <bthread/unstable.h>                   // bthread_flush
-#include <bthread/countdown_event.h>            // bthread::CountdownEvent
-#include <brpc/reloadable_flags.h>         // BRPC_VALIDATE_GFLAG
-#include "braft/storage.h"                       // LogStorage
-#include "braft/fsm_caller.h"                    // FSMCaller
+#include <brpc/reloadable_flags.h>    // BRPC_VALIDATE_GFLAG
+#include <bthread/countdown_event.h>  // bthread::CountdownEvent
+#include <bthread/unstable.h>         // bthread_flush
+#include <butil/logging.h>            // LOG
+#include <butil/object_pool.h>        // butil::get_object
+
+#include "braft/fsm_caller.h"  // FSMCaller
+#include "braft/storage.h"     // LogStorage
 
 namespace braft {
 
 DEFINE_int32(raft_leader_batch, 256, "max leader io batch");
 BRPC_VALIDATE_GFLAG(raft_leader_batch, ::brpc::PositiveInteger);
 
-static bvar::Adder<int64_t> g_read_entry_from_storage
-            ("raft_read_entry_from_storage_count");
-static bvar::PerSecond<bvar::Adder<int64_t> > g_read_entry_from_storage_second
-            ("raft_read_entry_from_storage_second", &g_read_entry_from_storage);
+static bvar::Adder<int64_t> g_read_entry_from_storage(
+    "raft_read_entry_from_storage_count");
+static bvar::PerSecond<bvar::Adder<int64_t> > g_read_entry_from_storage_second(
+    "raft_read_entry_from_storage_second", &g_read_entry_from_storage);
 
-static bvar::Adder<int64_t> g_read_term_from_storage
-            ("raft_read_term_from_storage_count");
-static bvar::PerSecond<bvar::Adder<int64_t> > g_read_term_from_storage_second
-            ("raft_read_term_from_storage_second", &g_read_term_from_storage);
+static bvar::Adder<int64_t> g_read_term_from_storage(
+    "raft_read_term_from_storage_count");
+static bvar::PerSecond<bvar::Adder<int64_t> > g_read_term_from_storage_second(
+    "raft_read_term_from_storage_second", &g_read_term_from_storage);
 
 static bvar::LatencyRecorder g_storage_append_entries_latency(
-                                    "raft_storage_append_entries");
+    "raft_storage_append_entries");
 static bvar::LatencyRecorder g_nomralized_append_entries_latency(
-                                    "raft_storage_append_entries_normalized");
+    "raft_storage_append_entries_normalized");
 static bvar::Adder<int64_t> g_storage_append_entries_concurrency(
-                                    "raft_storage_append_entries_concurrency");
+    "raft_storage_append_entries_concurrency");
 
 static bvar::CounterRecorder g_storage_flush_batch_counter(
-                                        "raft_storage_flush_batch_counter");
-
+    "raft_storage_flush_batch_counter");
 
 void LogManager::StableClosure::update_metric(IOMetric* m) {
     metric.open_segment_time_us = m->open_segment_time_us;
@@ -58,24 +58,20 @@ void LogManager::StableClosure::update_metric(IOMetric* m) {
 }
 
 LogManagerOptions::LogManagerOptions()
-    : log_storage(NULL)
-    , configuration_manager(NULL)
-    , fsm_caller(NULL)
-{}
+    : log_storage(NULL), configuration_manager(NULL), fsm_caller(NULL) {}
 
 LogManager::LogManager()
-    : _log_storage(NULL)
-    , _config_manager(NULL)
-    , _stopped(false)
-    , _has_error(false)
-    , _next_wait_id(0)
-    , _first_log_index(0)
-    , _last_log_index(0)
-{
+    : _log_storage(NULL),
+      _config_manager(NULL),
+      _stopped(false),
+      _has_error(false),
+      _next_wait_id(0),
+      _first_log_index(0),
+      _last_log_index(0) {
     CHECK_EQ(0, start_disk_thread());
 }
 
-int LogManager::init(const LogManagerOptions &options) {
+int LogManager::init(const LogManagerOptions& options) {
     BAIDU_SCOPED_LOCK(_mutex);
     if (options.log_storage == NULL) {
         return EINVAL;
@@ -111,10 +107,8 @@ LogManager::~LogManager() {
 int LogManager::start_disk_thread() {
     bthread::ExecutionQueueOptions queue_options;
     queue_options.bthread_attr = BTHREAD_ATTR_NORMAL;
-    return bthread::execution_queue_start(&_disk_queue,
-                                   &queue_options,
-                                   disk_thread,
-                                   this);
+    return bthread::execution_queue_start(&_disk_queue, &queue_options,
+                                          disk_thread, this);
 }
 
 int LogManager::stop_disk_thread() {
@@ -129,8 +123,8 @@ void LogManager::clear_memory_logs(const LogId& id) {
         nentries = 0;
         {
             BAIDU_SCOPED_LOCK(_mutex);
-            while (!_logs_in_memory.empty() 
-                    && nentries < ARRAY_SIZE(entries_to_clear)) {
+            while (!_logs_in_memory.empty() &&
+                   nentries < ARRAY_SIZE(entries_to_clear)) {
                 LogEntry* entry = _logs_in_memory.front();
                 if (entry->id >= id) {
                     break;
@@ -151,22 +145,19 @@ int64_t LogManager::first_log_index() {
 }
 
 class LastLogIdClosure : public LogManager::StableClosure {
-public:
-    LastLogIdClosure() {
-    }
-    void Run() {
-        _event.signal();
-    }
+   public:
+    LastLogIdClosure() {}
+    void Run() { _event.signal(); }
     void set_last_log_id(const LogId& log_id) {
-        CHECK(log_id.index == 0 || log_id.term != 0) << "Invalid log_id=" << log_id;
+        CHECK(log_id.index == 0 || log_id.term != 0)
+            << "Invalid log_id=" << log_id;
         _last_log_id = log_id;
     }
     LogId last_log_id() const { return _last_log_id; }
 
-    void wait() {
-        _event.wait();
-    }
-private:
+    void wait() { _event.wait(); }
+
+   private:
     bthread::CountdownEvent _event;
     LogId _last_log_id;
 };
@@ -207,44 +198,37 @@ LogId LogManager::last_log_id(bool is_flush) {
 }
 
 class TruncatePrefixClosure : public LogManager::StableClosure {
-public:
+   public:
     explicit TruncatePrefixClosure(const int64_t first_index_kept)
-        : _first_index_kept(first_index_kept)
-    {}
-    void Run() {
-        delete this;
-    }
+        : _first_index_kept(first_index_kept) {}
+    void Run() { delete this; }
     int64_t first_index_kept() const { return _first_index_kept; }
-private:
+
+   private:
     int64_t _first_index_kept;
 };
 
 class TruncateSuffixClosure : public LogManager::StableClosure {
-public:
+   public:
     TruncateSuffixClosure(int64_t last_index_kept, int64_t last_term_kept)
-        : _last_index_kept(last_index_kept)
-        , _last_term_kept(last_term_kept)
-    {}
-    void Run() {
-        delete this;
-    }
+        : _last_index_kept(last_index_kept), _last_term_kept(last_term_kept) {}
+    void Run() { delete this; }
     int64_t last_index_kept() const { return _last_index_kept; }
     int64_t last_term_kept() const { return _last_term_kept; }
-private:
+
+   private:
     int64_t _last_index_kept;
     int64_t _last_term_kept;
 };
 
 class ResetClosure : public LogManager::StableClosure {
-public:
+   public:
     explicit ResetClosure(int64_t next_log_index)
-        : _next_log_index(next_log_index)
-    {}
-    void Run() {
-        delete this;
-    }
+        : _next_log_index(next_log_index) {}
+    void Run() { delete this; }
     int64_t next_log_index() const { return _next_log_index; }
-private:
+
+   private:
     int64_t _next_log_index;
 };
 
@@ -297,7 +281,8 @@ int LogManager::reset(const int64_t next_log_index,
     ResetClosure* c = new ResetClosure(next_log_index);
     const int ret = bthread::execution_queue_execute(_disk_queue, c);
     lck.unlock();
-    CHECK_EQ(0, ret) << "execq execute failed, ret: " << ret << " err: " << berror();
+    CHECK_EQ(0, ret) << "execq execute failed, ret: " << ret
+                     << " err: " << berror();
     for (size_t i = 0; i < saved_logs_in_memory.size(); ++i) {
         saved_logs_in_memory[i]->Release();
     }
@@ -305,9 +290,9 @@ int LogManager::reset(const int64_t next_log_index,
 }
 
 void LogManager::unsafe_truncate_suffix(const int64_t last_index_kept) {
-
     if (last_index_kept < _applied_id.index) {
-        LOG(FATAL) << "Can't truncate logs before _applied_id=" <<_applied_id.index
+        LOG(FATAL) << "Can't truncate logs before _applied_id="
+                   << _applied_id.index
                    << ", last_log_kept=" << last_index_kept;
         return;
     }
@@ -326,16 +311,16 @@ void LogManager::unsafe_truncate_suffix(const int64_t last_index_kept) {
     CHECK(last_index_kept == 0 || last_term_kept != 0)
         << "last_index_kept=" << last_index_kept;
     _config_manager->truncate_suffix(last_index_kept);
-    TruncateSuffixClosure* tsc = new
-            TruncateSuffixClosure(last_index_kept, last_term_kept);
+    TruncateSuffixClosure* tsc =
+        new TruncateSuffixClosure(last_index_kept, last_term_kept);
     CHECK_EQ(0, bthread::execution_queue_execute(_disk_queue, tsc));
 }
 
-int LogManager::check_and_resolve_conflict(
-            std::vector<LogEntry*> *entries, StableClosure* done) {
-    AsyncClosureGuard done_guard(done);   
+int LogManager::check_and_resolve_conflict(std::vector<LogEntry*>* entries,
+                                           StableClosure* done) {
+    AsyncClosureGuard done_guard(done);
     if (entries->front()->id.index == 0) {
-        // Node is currently the leader and |entries| are from the user who 
+        // Node is currently the leader and |entries| are from the user who
         // don't know the correct indexes the logs should assign to. So we have
         // to assign indexes to the appending entries
         for (size_t i = 0; i < entries->size(); ++i) {
@@ -344,20 +329,23 @@ int LogManager::check_and_resolve_conflict(
         done_guard.release();
         return 0;
     } else {
-        // Node is currently a follower and |entries| are from the leader. We 
+        // Node is currently a follower and |entries| are from the leader. We
         // should check and resolve the confliction between the local logs and
         // |entries|
         if (entries->front()->id.index > _last_log_index + 1) {
-            done->status().set_error(EINVAL, "There's gap between first_index=%" PRId64
+            done->status().set_error(EINVAL,
+                                     "There's gap between first_index=%" PRId64
                                      " and last_log_index=%" PRId64,
-                                     entries->front()->id.index, _last_log_index);
+                                     entries->front()->id.index,
+                                     _last_log_index);
             return -1;
         }
         const int64_t applied_index = _applied_id.index;
         if (entries->back()->id.index <= applied_index) {
             LOG(WARNING) << "Received entries of which the last_log="
                          << entries->back()->id.index
-                         << " is not greater than _applied_index=" << applied_index
+                         << " is not greater than _applied_index="
+                         << applied_index
                          << ", return immediately with nothing changed";
             return 1;
         }
@@ -371,29 +359,30 @@ int LogManager::check_and_resolve_conflict(
             // ones.
             size_t conflicting_index = 0;
             for (; conflicting_index < entries->size(); ++conflicting_index) {
-                if (unsafe_get_term((*entries)[conflicting_index]->id.index)
-                        != (*entries)[conflicting_index]->id.term) {
+                if (unsafe_get_term((*entries)[conflicting_index]->id.index) !=
+                    (*entries)[conflicting_index]->id.term) {
                     break;
                 }
             }
             if (conflicting_index != entries->size()) {
-                if ((*entries)[conflicting_index]->id.index <= _last_log_index) {
+                if ((*entries)[conflicting_index]->id.index <=
+                    _last_log_index) {
                     // Truncate all the conflicting entries to make local logs
                     // consensus with the leader.
                     unsafe_truncate_suffix(
-                            (*entries)[conflicting_index]->id.index - 1);
+                        (*entries)[conflicting_index]->id.index - 1);
                 }
                 _last_log_index = entries->back()->id.index;
-            }  // else this is a duplicated AppendEntriesRequest, we have 
+            }  // else this is a duplicated AppendEntriesRequest, we have
                // nothing to do besides releasing all the entries
-            
+
             // Release all the entries before the conflicting_index and the rest
             // would be append to _logs_in_memory and _log_storage after this
             // function returns
             for (size_t i = 0; i < conflicting_index; ++i) {
                 (*entries)[i]->Release();
             }
-            entries->erase(entries->begin(), 
+            entries->erase(entries->begin(),
                            entries->begin() + conflicting_index);
         }
         done_guard.release();
@@ -404,8 +393,8 @@ int LogManager::check_and_resolve_conflict(
     return -1;
 }
 
-void LogManager::append_entries(
-            std::vector<LogEntry*> *entries, StableClosure* done) {
+void LogManager::append_entries(std::vector<LogEntry*>* entries,
+                                StableClosure* done) {
     CHECK(done);
     if (_has_error.load(butil::memory_order_relaxed)) {
         for (size_t i = 0; i < entries->size(); ++i) {
@@ -437,16 +426,18 @@ void LogManager::append_entries(
 
     if (!entries->empty()) {
         done->_first_log_index = entries->front()->id.index;
-        _logs_in_memory.insert(_logs_in_memory.end(), entries->begin(), entries->end());
+        _logs_in_memory.insert(_logs_in_memory.end(), entries->begin(),
+                               entries->end());
     }
 
     done->_entries.swap(*entries);
     int ret = bthread::execution_queue_execute(_disk_queue, done);
-    CHECK_EQ(0, ret) << "execq execute failed, ret: " << ret << " err: " << berror();
+    CHECK_EQ(0, ret) << "execq execute failed, ret: " << ret
+                     << " err: " << berror();
     wakeup_all_waiter(lck);
 }
 
-void LogManager::append_to_storage(std::vector<LogEntry*>* to_append, 
+void LogManager::append_to_storage(std::vector<LogEntry*>* to_append,
                                    LogId* last_id, IOMetric* metric) {
     if (!_has_error.load(butil::memory_order_relaxed)) {
         size_t written_size = 0;
@@ -462,16 +453,17 @@ void LogManager::append_to_storage(std::vector<LogEntry*>* to_append,
         if (nappent != (int)to_append->size()) {
             // FIXME
             LOG(ERROR) << "Fail to append_entries, "
-                       << "nappent=" << nappent 
+                       << "nappent=" << nappent
                        << ", to_append=" << to_append->size();
             report_error(EIO, "Fail to append entries");
         }
-        if (nappent > 0) { 
+        if (nappent > 0) {
             *last_id = (*to_append)[nappent - 1]->id;
         }
         g_storage_append_entries_latency << timer.u_elapsed();
         if (written_size) {
-            g_nomralized_append_entries_latency << timer.u_elapsed() * 1024 / written_size;
+            g_nomralized_append_entries_latency
+                << timer.u_elapsed() * 1024 / written_size;
         }
     }
     for (size_t j = 0; j < to_append->size(); ++j) {
@@ -480,20 +472,19 @@ void LogManager::append_to_storage(std::vector<LogEntry*>* to_append,
     to_append->clear();
 }
 
-DEFINE_int32(raft_max_append_buffer_size, 256 * 1024, 
+DEFINE_int32(raft_max_append_buffer_size, 256 * 1024,
              "Flush buffer to LogStorage if the buffer size reaches the limit");
 
 class AppendBatcher {
-public:
-    AppendBatcher(LogManager::StableClosure* storage[], size_t cap, LogId* last_id, 
-                 LogManager* lm)
-        : _storage(storage)
-        , _cap(cap)
-        , _size(0)
-        , _buffer_size(0)
-        , _last_id(last_id)
-        , _lm(lm)
-    {
+   public:
+    AppendBatcher(LogManager::StableClosure* storage[], size_t cap,
+                  LogId* last_id, LogManager* lm)
+        : _storage(storage),
+          _cap(cap),
+          _size(0),
+          _buffer_size(0),
+          _last_id(last_id),
+          _lm(lm) {
         _to_append.reserve(1024);
     }
     ~AppendBatcher() { flush(); }
@@ -506,8 +497,8 @@ public:
             for (size_t i = 0; i < _size; ++i) {
                 _storage[i]->_entries.clear();
                 if (_lm->_has_error.load(butil::memory_order_relaxed)) {
-                    _storage[i]->status().set_error(
-                            EIO, "Corrupted LogStorage");
+                    _storage[i]->status().set_error(EIO,
+                                                    "Corrupted LogStorage");
                 }
                 _storage[i]->update_metric(&metric);
                 _storage[i]->Run();
@@ -518,25 +509,25 @@ public:
         _buffer_size = 0;
     }
     void append(LogManager::StableClosure* done) {
-        if (_size == _cap || 
-                _buffer_size >= (size_t)FLAGS_raft_max_append_buffer_size) {
+        if (_size == _cap ||
+            _buffer_size >= (size_t)FLAGS_raft_max_append_buffer_size) {
             flush();
         }
         _storage[_size++] = done;
-        _to_append.insert(_to_append.end(), 
-                         done->_entries.begin(), done->_entries.end());
+        _to_append.insert(_to_append.end(), done->_entries.begin(),
+                          done->_entries.end());
         for (size_t i = 0; i < done->_entries.size(); ++i) {
             _buffer_size += done->_entries[i]->data.length();
         }
     }
 
-private:
+   private:
     LogManager::StableClosure** _storage;
     size_t _cap;
     size_t _size;
     size_t _buffer_size;
     std::vector<LogEntry*> _to_append;
-    LogId *_last_id;
+    LogId* _last_id;
     LogManager* _lm;
 };
 
@@ -551,21 +542,20 @@ int LogManager::disk_thread(void* meta,
     LogId last_id = log_manager->_disk_id;
     StableClosure* storage[256];
     AppendBatcher ab(storage, ARRAY_SIZE(storage), &last_id, log_manager);
-    
+
     for (; iter; ++iter) {
-                // ^^^ Must iterate to the end to release to corresponding
-                //     even if some error has occurred
+        // ^^^ Must iterate to the end to release to corresponding
+        //     even if some error has occurred
         StableClosure* done = *iter;
-        done->metric.bthread_queue_time_us = butil::cpuwide_time_us() - 
-                                            done->metric.start_time_us;
+        done->metric.bthread_queue_time_us =
+            butil::cpuwide_time_us() - done->metric.start_time_us;
         if (!done->_entries.empty()) {
             ab.append(done);
         } else {
             ab.flush();
             int ret = 0;
             do {
-                LastLogIdClosure* llic =
-                        dynamic_cast<LastLogIdClosure*>(done);
+                LastLogIdClosure* llic = dynamic_cast<LastLogIdClosure*>(done);
                 if (llic) {
                     // Not used log_manager->get_disk_id() as it might be out of
                     // date
@@ -573,28 +563,28 @@ int LogManager::disk_thread(void* meta,
                     llic->set_last_log_id(last_id);
                     break;
                 }
-                TruncatePrefixClosure* tpc = 
-                        dynamic_cast<TruncatePrefixClosure*>(done);
+                TruncatePrefixClosure* tpc =
+                    dynamic_cast<TruncatePrefixClosure*>(done);
                 if (tpc) {
                     BRAFT_VLOG << "Truncating storage to first_index_kept="
-                        << tpc->first_index_kept();
+                               << tpc->first_index_kept();
                     ret = log_manager->_log_storage->truncate_prefix(
-                                    tpc->first_index_kept());
+                        tpc->first_index_kept());
                     break;
                 }
-                TruncateSuffixClosure* tsc = 
-                        dynamic_cast<TruncateSuffixClosure*>(done);
+                TruncateSuffixClosure* tsc =
+                    dynamic_cast<TruncateSuffixClosure*>(done);
                 if (tsc) {
                     LOG(WARNING) << "Truncating storage to last_index_kept="
                                  << tsc->last_index_kept();
                     ret = log_manager->_log_storage->truncate_suffix(
-                                    tsc->last_index_kept());
+                        tsc->last_index_kept());
                     if (ret == 0) {
                         // update last_id after truncate_suffix
                         last_id.index = tsc->last_index_kept();
                         last_id.term = tsc->last_term_kept();
                         CHECK(last_id.index == 0 || last_id.term != 0)
-                                << "last_id=" << last_id;
+                            << "last_id=" << last_id;
                     }
                     break;
                 }
@@ -602,13 +592,15 @@ int LogManager::disk_thread(void* meta,
                 if (rc) {
                     LOG(INFO) << "Reseting storage to next_log_index="
                               << rc->next_log_index();
-                    ret = log_manager->_log_storage->reset(rc->next_log_index());
+                    ret =
+                        log_manager->_log_storage->reset(rc->next_log_index());
                     break;
                 }
             } while (0);
 
             if (ret != 0) {
-                log_manager->report_error(ret, "Failed operation on LogStorage");
+                log_manager->report_error(ret,
+                                          "Failed operation on LogStorage");
             }
             done->Run();
         }
@@ -621,8 +613,8 @@ int LogManager::disk_thread(void* meta,
 
 void LogManager::set_snapshot(const SnapshotMeta* meta) {
     BRAFT_VLOG << "Set snapshot last_included_index="
-              << meta->last_included_index()
-              << " last_included_term=" <<  meta->last_included_term();
+               << meta->last_included_index()
+               << " last_included_term=" << meta->last_included_term();
     std::unique_lock<raft_mutex_t> lck(_mutex);
     if (meta->last_included_index() <= _last_snapshot_id.index) {
         return;
@@ -649,10 +641,10 @@ void LogManager::set_snapshot(const SnapshotMeta* meta) {
         _applied_id = _last_snapshot_id;
     }
     // NOTICE: not to update disk_id here as we are not sure if this node really
-    // has these logs on disk storage. Just leave disk_id as it was, which can keep
-    // these logs in memory all the time until they are flushed to disk. By this 
-    // way we can avoid some corner cases which failed to get logs.
-    
+    // has these logs on disk storage. Just leave disk_id as it was, which can
+    // keep these logs in memory all the time until they are flushed to disk. By
+    // this way we can avoid some corner cases which failed to get logs.
+
     if (term == 0) {
         // last_included_index is larger than last_index
         // FIXME: what if last_included_index is less than first_index?
@@ -692,7 +684,8 @@ LogEntry* LogManager::get_entry_from_memory(const int64_t index) {
     if (!_logs_in_memory.empty()) {
         int64_t first_index = _logs_in_memory.front()->id.index;
         int64_t last_index = _logs_in_memory.back()->id.index;
-        CHECK_EQ(last_index - first_index + 1, static_cast<int64_t>(_logs_in_memory.size()));
+        CHECK_EQ(last_index - first_index + 1,
+                 static_cast<int64_t>(_logs_in_memory.size()));
         if (index >= first_index && index <= last_index) {
             entry = _logs_in_memory[index - first_index];
         }
@@ -778,7 +771,8 @@ LogEntry* LogManager::get_entry(const int64_t index) {
     return entry;
 }
 
-void LogManager::get_configuration(const int64_t index, ConfigurationEntry* conf) {
+void LogManager::get_configuration(const int64_t index,
+                                   ConfigurationEntry* conf) {
     BAIDU_SCOPED_LOCK(_mutex);
     return _config_manager->get(index, conf);
 }
@@ -826,16 +820,17 @@ void LogManager::shutdown() {
     wakeup_all_waiter(lck);
 }
 
-void* LogManager::run_on_new_log(void *arg) {
+void* LogManager::run_on_new_log(void* arg) {
     WaitMeta* wm = (WaitMeta*)arg;
     wm->on_new_log(wm->arg, wm->error_code);
     butil::return_object(wm);
     return NULL;
 }
 
-LogManager::WaitId LogManager::wait(
-        int64_t expected_last_log_index, 
-        int (*on_new_log)(void *arg, int error_code), void *arg) {
+LogManager::WaitId LogManager::wait(int64_t expected_last_log_index,
+                                    int (*on_new_log)(void* arg,
+                                                      int error_code),
+                                    void* arg) {
     WaitMeta* wm = butil::get_object<WaitMeta>();
     if (BAIDU_UNLIKELY(wm == NULL)) {
         PLOG(FATAL) << "Fail to new WaitMeta";
@@ -849,7 +844,7 @@ LogManager::WaitId LogManager::wait(
 }
 
 LogManager::WaitId LogManager::notify_on_new_log(
-        int64_t expected_last_log_index, WaitMeta* wm) {
+    int64_t expected_last_log_index, WaitMeta* wm) {
     std::unique_lock<raft_mutex_t> lck(_mutex);
     if (expected_last_log_index != _last_log_index || _stopped) {
         wm->error_code = _stopped ? ESTOP : 0;
@@ -891,8 +886,9 @@ void LogManager::wakeup_all_waiter(std::unique_lock<raft_mutex_t>& lck) {
     }
     WaitMeta* wm[_wait_map.size()];
     size_t nwm = 0;
-    for (butil::FlatMap<int64_t, WaitMeta*>::const_iterator
-            iter = _wait_map.begin(); iter != _wait_map.end(); ++iter) {
+    for (butil::FlatMap<int64_t, WaitMeta*>::const_iterator iter =
+             _wait_map.begin();
+         iter != _wait_map.end(); ++iter) {
         wm[nwm++] = iter->second;
     }
     _wait_map.clear();
@@ -902,9 +898,7 @@ void LogManager::wakeup_all_waiter(std::unique_lock<raft_mutex_t>& lck) {
         wm[i]->error_code = error_code;
         bthread_t tid;
         bthread_attr_t attr = BTHREAD_ATTR_NORMAL | BTHREAD_NOSIGNAL;
-        if (bthread_start_background(
-                    &tid, &attr,
-                    run_on_new_log, wm[i]) != 0) {
+        if (bthread_start_background(&tid, &attr, run_on_new_log, wm[i]) != 0) {
             PLOG(ERROR) << "Fail to start bthread";
             run_on_new_log(wm[i]);
         }
@@ -952,16 +946,20 @@ butil::Status LogManager::check_consistency() {
         if (_first_log_index == 1) {
             return butil::Status::OK();
         }
-        return butil::Status(EIO, "Missing logs in (0, %" PRId64 ")", _first_log_index);
+        return butil::Status(EIO, "Missing logs in (0, %" PRId64 ")",
+                             _first_log_index);
     } else {
-        if (_last_snapshot_id.index >= _first_log_index - 1
-                && _last_snapshot_id.index <= _last_log_index) {
+        if (_last_snapshot_id.index >= _first_log_index - 1 &&
+            _last_snapshot_id.index <= _last_log_index) {
             return butil::Status::OK();
         }
-        return butil::Status(EIO, "There's a gap between snapshot={%" PRId64 ", %" PRId64 "}"
-                                 " and log=[%" PRId64 ", %" PRId64 "] ",
-                            _last_snapshot_id.index, _last_snapshot_id.term,
-                            _first_log_index, _last_log_index);
+        return butil::Status(EIO,
+                             "There's a gap between snapshot={%" PRId64
+                             ", %" PRId64
+                             "}"
+                             " and log=[%" PRId64 ", %" PRId64 "] ",
+                             _last_snapshot_id.index, _last_snapshot_id.term,
+                             _first_log_index, _last_log_index);
     }
     CHECK(false) << "Can't reach here";
     return butil::Status(-1, "Impossible condition");

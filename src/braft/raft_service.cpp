@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -15,12 +15,14 @@
 // Authors: Wang,Yao(wangyao02@baidu.com)
 //          Zhangyi Chen(chenzhangyi01@baidu.com)
 
-#include <butil/logging.h>
-#include <brpc/server.h>
 #include "braft/raft_service.h"
-#include "braft/raft.h"
+
+#include <brpc/server.h>
+#include <butil/logging.h>
+
 #include "braft/node.h"
 #include "braft/node_manager.h"
+#include "braft/raft.h"
 
 namespace braft {
 
@@ -29,12 +31,11 @@ RaftServiceImpl::~RaftServiceImpl() {
 }
 
 void RaftServiceImpl::pre_vote(google::protobuf::RpcController* cntl_base,
-                          const RequestVoteRequest* request,
-                          RequestVoteResponse* response,
-                          google::protobuf::Closure* done) {
+                               const RequestVoteRequest* request,
+                               RequestVoteResponse* response,
+                               google::protobuf::Closure* done) {
     brpc::ClosureGuard done_guard(done);
-    brpc::Controller* cntl =
-        static_cast<brpc::Controller*>(cntl_base);
+    brpc::Controller* cntl = static_cast<brpc::Controller*>(cntl_base);
 
     PeerId peer_id;
     if (0 != peer_id.parse(request->peer_id())) {
@@ -42,8 +43,8 @@ void RaftServiceImpl::pre_vote(google::protobuf::RpcController* cntl_base,
         return;
     }
 
-    scoped_refptr<NodeImpl> node_ptr = 
-                        global_node_manager->get(request->group_id(), peer_id);
+    scoped_refptr<NodeImpl> node_ptr =
+        global_node_manager->get(request->group_id(), peer_id);
     NodeImpl* node = node_ptr.get();
     if (!node) {
         cntl->SetFailed(ENOENT, "peer_id not exist");
@@ -59,12 +60,11 @@ void RaftServiceImpl::pre_vote(google::protobuf::RpcController* cntl_base,
 }
 
 void RaftServiceImpl::request_vote(google::protobuf::RpcController* cntl_base,
-                          const RequestVoteRequest* request,
-                          RequestVoteResponse* response,
-                          google::protobuf::Closure* done) {
+                                   const RequestVoteRequest* request,
+                                   RequestVoteResponse* response,
+                                   google::protobuf::Closure* done) {
     brpc::ClosureGuard done_guard(done);
-    brpc::Controller* cntl =
-        static_cast<brpc::Controller*>(cntl_base);
+    brpc::Controller* cntl = static_cast<brpc::Controller*>(cntl_base);
 
     PeerId peer_id;
     if (0 != peer_id.parse(request->peer_id())) {
@@ -72,8 +72,8 @@ void RaftServiceImpl::request_vote(google::protobuf::RpcController* cntl_base,
         return;
     }
 
-    scoped_refptr<NodeImpl> node_ptr = 
-                        global_node_manager->get(request->group_id(), peer_id);
+    scoped_refptr<NodeImpl> node_ptr =
+        global_node_manager->get(request->group_id(), peer_id);
     NodeImpl* node = node_ptr.get();
     if (!node) {
         cntl->SetFailed(ENOENT, "peer_id not exist");
@@ -88,12 +88,11 @@ void RaftServiceImpl::request_vote(google::protobuf::RpcController* cntl_base,
 }
 
 void RaftServiceImpl::append_entries(google::protobuf::RpcController* cntl_base,
-                            const AppendEntriesRequest* request,
-                            AppendEntriesResponse* response,
-                            google::protobuf::Closure* done) {
+                                     const AppendEntriesRequest* request,
+                                     AppendEntriesResponse* response,
+                                     google::protobuf::Closure* done) {
     brpc::ClosureGuard done_guard(done);
-    brpc::Controller* cntl =
-        static_cast<brpc::Controller*>(cntl_base);
+    brpc::Controller* cntl = static_cast<brpc::Controller*>(cntl_base);
 
     PeerId peer_id;
     if (0 != peer_id.parse(request->peer_id())) {
@@ -101,24 +100,23 @@ void RaftServiceImpl::append_entries(google::protobuf::RpcController* cntl_base,
         return;
     }
 
-    scoped_refptr<NodeImpl> node_ptr = 
-                        global_node_manager->get(request->group_id(), peer_id);
+    scoped_refptr<NodeImpl> node_ptr =
+        global_node_manager->get(request->group_id(), peer_id);
     NodeImpl* node = node_ptr.get();
     if (!node) {
         cntl->SetFailed(ENOENT, "peer_id not exist");
         return;
     }
 
-    return node->handle_append_entries_request(cntl, request, response, 
+    return node->handle_append_entries_request(cntl, request, response,
                                                done_guard.release());
 }
 
-void RaftServiceImpl::install_snapshot(google::protobuf::RpcController* cntl_base,
-                              const InstallSnapshotRequest* request,
-                              InstallSnapshotResponse* response,
-                              google::protobuf::Closure* done) {
-    brpc::Controller* cntl =
-        static_cast<brpc::Controller*>(cntl_base);
+void RaftServiceImpl::install_snapshot(
+    google::protobuf::RpcController* cntl_base,
+    const InstallSnapshotRequest* request, InstallSnapshotResponse* response,
+    google::protobuf::Closure* done) {
+    brpc::Controller* cntl = static_cast<brpc::Controller*>(cntl_base);
 
     PeerId peer_id;
     if (0 != peer_id.parse(request->peer_id())) {
@@ -127,8 +125,8 @@ void RaftServiceImpl::install_snapshot(google::protobuf::RpcController* cntl_bas
         return;
     }
 
-    scoped_refptr<NodeImpl> node_ptr = 
-                        global_node_manager->get(request->group_id(), peer_id);
+    scoped_refptr<NodeImpl> node_ptr =
+        global_node_manager->get(request->group_id(), peer_id);
     NodeImpl* node = node_ptr.get();
     if (!node) {
         cntl->SetFailed(ENOENT, "peer_id not exist");
@@ -144,8 +142,7 @@ void RaftServiceImpl::timeout_now(::google::protobuf::RpcController* controller,
                                   const ::braft::TimeoutNowRequest* request,
                                   ::braft::TimeoutNowResponse* response,
                                   ::google::protobuf::Closure* done) {
-    brpc::Controller* cntl =
-        static_cast<brpc::Controller*>(controller);
+    brpc::Controller* cntl = static_cast<brpc::Controller*>(controller);
 
     PeerId peer_id;
     if (0 != peer_id.parse(request->peer_id())) {
@@ -154,8 +151,8 @@ void RaftServiceImpl::timeout_now(::google::protobuf::RpcController* controller,
         return;
     }
 
-    scoped_refptr<NodeImpl> node_ptr = 
-                        global_node_manager->get(request->group_id(), peer_id);
+    scoped_refptr<NodeImpl> node_ptr =
+        global_node_manager->get(request->group_id(), peer_id);
     NodeImpl* node = node_ptr.get();
     if (!node) {
         cntl->SetFailed(ENOENT, "peer_id not exist");
@@ -166,4 +163,4 @@ void RaftServiceImpl::timeout_now(::google::protobuf::RpcController* controller,
     node->handle_timeout_now_request(cntl, request, response, done);
 }
 
-}
+}  // namespace braft

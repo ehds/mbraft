@@ -1,11 +1,11 @@
 // Copyright (c) 2018 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,19 +16,20 @@
 
 #include "braft/cli_service.h"
 
-#include <brpc/controller.h>       // brpc::Controller
-#include "braft/node_manager.h"          // NodeManager
-#include "braft/closure_helper.h"        // NewCallback
+#include <brpc/controller.h>  // brpc::Controller
+
+#include "braft/closure_helper.h"  // NewCallback
+#include "braft/node_manager.h"    // NodeManager
 
 namespace braft {
 
 static void add_peer_returned(brpc::Controller* cntl,
-                          const AddPeerRequest* request,
-                          AddPeerResponse* response,
-                          std::vector<PeerId> old_peers,
-                          scoped_refptr<NodeImpl> /*node*/,
-                          ::google::protobuf::Closure* done,
-                          const butil::Status& st) {
+                              const AddPeerRequest* request,
+                              AddPeerResponse* response,
+                              std::vector<PeerId> old_peers,
+                              scoped_refptr<NodeImpl> /*node*/,
+                              ::google::protobuf::Closure* done,
+                              const butil::Status& st) {
     brpc::ClosureGuard done_guard(done);
     if (!st.ok()) {
         cntl->SetFailed(st.error_code(), "%s", st.error_cstr());
@@ -54,7 +55,8 @@ void CliServiceImpl::add_peer(::google::protobuf::RpcController* controller,
     brpc::Controller* cntl = (brpc::Controller*)controller;
     brpc::ClosureGuard done_guard(done);
     scoped_refptr<NodeImpl> node;
-    butil::Status st = get_node(&node, request->group_id(), request->leader_id());
+    butil::Status st =
+        get_node(&node, request->group_id(), request->leader_id());
     if (!st.ok()) {
         cntl->SetFailed(st.error_code(), "%s", st.error_cstr());
         return;
@@ -68,25 +70,24 @@ void CliServiceImpl::add_peer(::google::protobuf::RpcController* controller,
     PeerId adding_peer;
     if (adding_peer.parse(request->peer_id()) != 0) {
         cntl->SetFailed(EINVAL, "Fail to parse peer_id %s",
-                                request->peer_id().c_str());
+                        request->peer_id().c_str());
         return;
     }
-    LOG(WARNING) << "Receive AddPeerRequest to " << node->node_id() 
-                 << " from " << cntl->remote_side()
-                 << ", adding " << request->peer_id();
-    Closure* add_peer_done = NewCallback(
-            add_peer_returned, cntl, request, response, peers, node,
-            done_guard.release());
+    LOG(WARNING) << "Receive AddPeerRequest to " << node->node_id() << " from "
+                 << cntl->remote_side() << ", adding " << request->peer_id();
+    Closure* add_peer_done =
+        NewCallback(add_peer_returned, cntl, request, response, peers, node,
+                    done_guard.release());
     return node->add_peer(adding_peer, add_peer_done);
 }
 
 static void remove_peer_returned(brpc::Controller* cntl,
-                          const RemovePeerRequest* request,
-                          RemovePeerResponse* response,
-                          std::vector<PeerId> old_peers,
-                          scoped_refptr<NodeImpl> /*node*/,
-                          ::google::protobuf::Closure* done,
-                          const butil::Status& st) {
+                                 const RemovePeerRequest* request,
+                                 RemovePeerResponse* response,
+                                 std::vector<PeerId> old_peers,
+                                 scoped_refptr<NodeImpl> /*node*/,
+                                 ::google::protobuf::Closure* done,
+                                 const butil::Status& st) {
     brpc::ClosureGuard done_guard(done);
     if (!st.ok()) {
         cntl->SetFailed(st.error_code(), "%s", st.error_cstr());
@@ -107,7 +108,8 @@ void CliServiceImpl::remove_peer(::google::protobuf::RpcController* controller,
     brpc::Controller* cntl = (brpc::Controller*)controller;
     brpc::ClosureGuard done_guard(done);
     scoped_refptr<NodeImpl> node;
-    butil::Status st = get_node(&node, request->group_id(), request->leader_id());
+    butil::Status st =
+        get_node(&node, request->group_id(), request->leader_id());
     if (!st.ok()) {
         cntl->SetFailed(st.error_code(), "%s", st.error_cstr());
         return;
@@ -121,15 +123,15 @@ void CliServiceImpl::remove_peer(::google::protobuf::RpcController* controller,
     PeerId removing_peer;
     if (removing_peer.parse(request->peer_id()) != 0) {
         cntl->SetFailed(EINVAL, "Fail to parse peer_id %s",
-                                request->peer_id().c_str());
+                        request->peer_id().c_str());
         return;
     }
-    LOG(WARNING) << "Receive RemovePeerRequest to " << node->node_id() 
-                 << " from " << cntl->remote_side()
-                 << ", removing " << request->peer_id();
-    Closure* remove_peer_done = NewCallback(
-            remove_peer_returned, cntl, request, response, peers, node,
-            done_guard.release());
+    LOG(WARNING) << "Receive RemovePeerRequest to " << node->node_id()
+                 << " from " << cntl->remote_side() << ", removing "
+                 << request->peer_id();
+    Closure* remove_peer_done =
+        NewCallback(remove_peer_returned, cntl, request, response, peers, node,
+                    done_guard.release());
     return node->remove_peer(removing_peer, remove_peer_done);
 }
 
@@ -150,13 +152,13 @@ void CliServiceImpl::reset_peer(::google::protobuf::RpcController* controller,
         PeerId peer;
         if (peer.parse(request->new_peers(i)) != 0) {
             cntl->SetFailed(EINVAL, "Fail to parse %s",
-                                    request->new_peers(i).c_str());
+                            request->new_peers(i).c_str());
             return;
         }
         new_peers.add_peer(peer);
     }
-    LOG(WARNING) << "Receive set_peer to " << node->node_id()
-                 << " from " << cntl->remote_side();
+    LOG(WARNING) << "Receive set_peer to " << node->node_id() << " from "
+                 << cntl->remote_side();
     st = node->reset_peers(new_peers);
     if (!st.ok()) {
         cntl->SetFailed(st.error_code(), "%s", st.error_cstr());
@@ -177,7 +179,6 @@ void CliServiceImpl::snapshot(::google::protobuf::RpcController* controller,
                               const ::braft::SnapshotRequest* request,
                               ::braft::SnapshotResponse* response,
                               ::google::protobuf::Closure* done) {
-
     brpc::Controller* cntl = (brpc::Controller*)controller;
     brpc::ClosureGuard done_guard(done);
     scoped_refptr<NodeImpl> node;
@@ -186,8 +187,8 @@ void CliServiceImpl::snapshot(::google::protobuf::RpcController* controller,
         cntl->SetFailed(st.error_code(), "%s", st.error_cstr());
         return;
     }
-    Closure* snapshot_done = NewCallback(snapshot_returned, cntl, node,
-                                         done_guard.release());
+    Closure* snapshot_done =
+        NewCallback(snapshot_returned, cntl, node, done_guard.release());
     return node->snapshot(snapshot_done);
 }
 
@@ -202,11 +203,11 @@ void CliServiceImpl::get_leader(::google::protobuf::RpcController* controller,
         PeerId peer;
         if (peer.parse(request->peer_id()) != 0) {
             cntl->SetFailed(EINVAL, "Fail to parse %s",
-                                    request->peer_id().c_str());
+                            request->peer_id().c_str());
             return;
         }
-        scoped_refptr<NodeImpl> node = 
-                            global_node_manager->get(request->group_id(), peer);
+        scoped_refptr<NodeImpl> node =
+            global_node_manager->get(request->group_id(), peer);
         if (node) {
             nodes.push_back(node);
         }
@@ -215,7 +216,7 @@ void CliServiceImpl::get_leader(::google::protobuf::RpcController* controller,
     }
     if (nodes.empty()) {
         cntl->SetFailed(ENOENT, "No nodes in group %s",
-                                request->group_id().c_str());
+                        request->group_id().c_str());
         return;
     }
 
@@ -230,46 +231,45 @@ void CliServiceImpl::get_leader(::google::protobuf::RpcController* controller,
 }
 
 butil::Status CliServiceImpl::get_node(scoped_refptr<NodeImpl>* node,
-                                      const GroupId& group_id,
-                                      const std::string& peer_id) {
+                                       const GroupId& group_id,
+                                       const std::string& peer_id) {
     if (!peer_id.empty()) {
         *node = global_node_manager->get(group_id, peer_id);
         if (!(*node)) {
             return butil::Status(ENOENT, "Fail to find node %s in group %s",
-                                         peer_id.c_str(),
-                                         group_id.c_str());
+                                 peer_id.c_str(), group_id.c_str());
         }
     } else {
         std::vector<scoped_refptr<NodeImpl> > nodes;
         global_node_manager->get_nodes_by_group_id(group_id, &nodes);
         if (nodes.empty()) {
             return butil::Status(ENOENT, "Fail to find node in group %s",
-                                         group_id.c_str());
+                                 group_id.c_str());
         }
         if (nodes.size() > 1) {
-            return butil::Status(EINVAL, "peer must be specified "
-                                        "since there're %lu nodes in group %s",
-                                         nodes.size(), group_id.c_str());
+            return butil::Status(EINVAL,
+                                 "peer must be specified "
+                                 "since there're %lu nodes in group %s",
+                                 nodes.size(), group_id.c_str());
         }
         *node = nodes.front();
     }
 
     if ((*node)->disable_cli()) {
-        return butil::Status(EACCES, "CliService is not allowed to access node "
-                                    "%s", (*node)->node_id().to_string().c_str());
+        return butil::Status(EACCES,
+                             "CliService is not allowed to access node "
+                             "%s",
+                             (*node)->node_id().to_string().c_str());
     }
 
     return butil::Status::OK();
 }
 
-static void change_peers_returned(brpc::Controller* cntl,
-                          const ChangePeersRequest* request,
-                          ChangePeersResponse* response,
-                          std::vector<PeerId> old_peers,
-                          Configuration new_peers,
-                          scoped_refptr<NodeImpl> /*node*/,
-                          ::google::protobuf::Closure* done,
-                          const butil::Status& st) {
+static void change_peers_returned(
+    brpc::Controller* cntl, const ChangePeersRequest* request,
+    ChangePeersResponse* response, std::vector<PeerId> old_peers,
+    Configuration new_peers, scoped_refptr<NodeImpl> /*node*/,
+    ::google::protobuf::Closure* done, const butil::Status& st) {
     brpc::ClosureGuard done_guard(done);
     if (!st.ok()) {
         cntl->SetFailed(st.error_code(), "%s", st.error_cstr());
@@ -278,8 +278,8 @@ static void change_peers_returned(brpc::Controller* cntl,
     for (size_t i = 0; i < old_peers.size(); ++i) {
         response->add_old_peers(old_peers[i].to_string());
     }
-    for (Configuration::const_iterator
-            iter = new_peers.begin(); iter != new_peers.end(); ++iter) {
+    for (Configuration::const_iterator iter = new_peers.begin();
+         iter != new_peers.end(); ++iter) {
         response->add_new_peers(iter->to_string());
     }
 }
@@ -291,7 +291,8 @@ void CliServiceImpl::change_peers(::google::protobuf::RpcController* controller,
     brpc::Controller* cntl = (brpc::Controller*)controller;
     brpc::ClosureGuard done_guard(done);
     scoped_refptr<NodeImpl> node;
-    butil::Status st = get_node(&node, request->group_id(), request->leader_id());
+    butil::Status st =
+        get_node(&node, request->group_id(), request->leader_id());
     if (!st.ok()) {
         cntl->SetFailed(st.error_code(), "%s", st.error_cstr());
         return;
@@ -307,27 +308,27 @@ void CliServiceImpl::change_peers(::google::protobuf::RpcController* controller,
         PeerId peer;
         if (peer.parse(request->new_peers(i)) != 0) {
             cntl->SetFailed(EINVAL, "Fail to parse %s",
-                                    request->new_peers(i).c_str());
+                            request->new_peers(i).c_str());
             return;
         }
         conf.add_peer(peer);
     }
-    Closure* change_peers_done = NewCallback(
-            change_peers_returned, 
-            cntl, request, response, old_peers, conf, node,
-            done_guard.release());
+    Closure* change_peers_done =
+        NewCallback(change_peers_returned, cntl, request, response, old_peers,
+                    conf, node, done_guard.release());
     return node->change_peers(conf, change_peers_done);
 }
 
 void CliServiceImpl::transfer_leader(
-                    ::google::protobuf::RpcController* controller,
-                    const ::braft::TransferLeaderRequest* request,
-                    ::braft::TransferLeaderResponse* response,
-                    ::google::protobuf::Closure* done) {
+    ::google::protobuf::RpcController* controller,
+    const ::braft::TransferLeaderRequest* request,
+    ::braft::TransferLeaderResponse* response,
+    ::google::protobuf::Closure* done) {
     brpc::Controller* cntl = (brpc::Controller*)controller;
     brpc::ClosureGuard done_guard(done);
     scoped_refptr<NodeImpl> node;
-    butil::Status st = get_node(&node, request->group_id(), request->leader_id());
+    butil::Status st =
+        get_node(&node, request->group_id(), request->leader_id());
     if (!st.ok()) {
         cntl->SetFailed(st.error_code(), "%s", st.error_cstr());
         return;
@@ -340,7 +341,7 @@ void CliServiceImpl::transfer_leader(
     const int rc = node->transfer_leadership_to(peer);
     if (rc != 0) {
         cntl->SetFailed(rc, "Fail to invoke transfer_leadership_to : %s",
-                            berror(rc));
+                        berror(rc));
         return;
     }
 }

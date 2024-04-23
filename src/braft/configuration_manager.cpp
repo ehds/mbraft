@@ -1,11 +1,11 @@
 // Copyright (c) 2016 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -31,15 +31,15 @@ int ConfigurationManager::add(const ConfigurationEntry& entry) {
 }
 
 void ConfigurationManager::truncate_prefix(const int64_t first_index_kept) {
-    while (!_configurations.empty()
-            && _configurations.front().id.index < first_index_kept) {
+    while (!_configurations.empty() &&
+           _configurations.front().id.index < first_index_kept) {
         _configurations.pop_front();
     }
 }
 
 void ConfigurationManager::truncate_suffix(const int64_t last_index_kept) {
-    while (!_configurations.empty()
-        && _configurations.back().id.index > last_index_kept) {
+    while (!_configurations.empty() &&
+           _configurations.back().id.index > last_index_kept) {
         _configurations.pop_back();
     }
 }

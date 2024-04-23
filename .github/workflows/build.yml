@@ -59,6 +59,10 @@ jobs:
         chmod a+x bazel-0.25.2-installer-linux-x86_64.sh
         ./bazel-0.25.2-installer-linux-x86_64.sh --user
         export PATH="$PATH:$HOME/bin"
+    - name: Check lint
+      run: |
+        clang-format --dry-run --Werror src/braft/*.h src/braft/*.cpp
+
     - name: Build with cmake
       if: ${{ matrix.build_tool == 'cmake' }}
       run: |

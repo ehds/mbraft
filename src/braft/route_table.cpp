@@ -3,9 +3,9 @@
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,12 +16,13 @@
 
 #include "braft/route_table.h"
 
-#include <gflags/gflags.h>
-#include <butil/memory/singleton.h>
+#include <brpc/channel.h>
+#include <brpc/controller.h>
 #include <butil/containers/doubly_buffered_data.h>
 #include <butil/containers/flat_map.h>
-#include <brpc/controller.h>
-#include <brpc/channel.h>
+#include <butil/memory/singleton.h>
+#include <gflags/gflags.h>
+
 #include "braft/cli.pb.h"
 
 namespace braft {
@@ -30,11 +31,10 @@ namespace rtb {
 DEFINE_int32(initial_route_table_cap, 128, "Initial capacity of RouteTable");
 
 class RouteTable {
-DISALLOW_COPY_AND_ASSIGN(RouteTable);
-public:
-    static RouteTable* GetInstance() {
-        return Singleton<RouteTable>::get();
-    }
+    DISALLOW_COPY_AND_ASSIGN(RouteTable);
+
+   public:
+    static RouteTable* GetInstance() { return Singleton<RouteTable>::get(); }
     void update_conf(const GroupId& group, const Configuration& conf) {
         _map.Modify(modify_conf, group, conf);
     }
@@ -78,11 +78,9 @@ public:
         return 0;
     }
 
-private:
-friend struct DefaultSingletonTraits<RouteTable>;
-    RouteTable() {
-        _map.Modify(init);
-    }
+   private:
+    friend struct DefaultSingletonTraits<RouteTable>;
+    RouteTable() { _map.Modify(init); }
     ~RouteTable() {}
 
     struct GroupConf {
@@ -119,7 +117,8 @@ friend struct DefaultSingletonTraits<RouteTable>;
     static size_t delete_group(GroupMap& m, const GroupId& group) {
         GroupConf* gc = m.seek(group);
         if (gc != NULL) {
-            return (size_t)m.erase(group);;
+            return (size_t)m.erase(group);
+            ;
         }
         return 0;
     }
@@ -168,21 +167,20 @@ butil::Status refresh_leader(const GroupId& group, int timeout_ms) {
     Configuration conf;
     if (rtb->list_conf(group, &conf) != 0) {
         return butil::Status(ENOENT, "group %s is not reistered in RouteTable",
-                                    group.c_str());
+                             group.c_str());
     }
     butil::Status error;
-    for (Configuration::const_iterator
-            iter = conf.begin(); iter != conf.end(); ++iter) {
+    for (Configuration::const_iterator iter = conf.begin(); iter != conf.end();
+         ++iter) {
         brpc::Channel channel;
         if (channel.Init(iter->addr, NULL) != 0) {
             if (error.ok()) {
                 error.set_error(-1, "Fail to init channel to %s",
-                                    iter->to_string().c_str());
+                                iter->to_string().c_str());
             } else {
                 std::string saved_et = error.error_str();
                 error.set_error(-1, "%s, Fail to init channel to %s",
-                                         saved_et.c_str(),
-                                         iter->to_string().c_str());
+                                saved_et.c_str(), iter->to_string().c_str());
             }
             continue;
         }
@@ -199,14 +197,13 @@ butil::Status refresh_leader(const GroupId& group, int timeout_ms) {
         }
         if (error.ok()) {
             error.set_error(cntl.ErrorCode(), "[%s] %s",
-                                              iter->to_string().c_str(),
-                                              cntl.ErrorText().c_str());
+                            iter->to_string().c_str(),
+                            cntl.ErrorText().c_str());
         } else {
             std::string saved_et = error.error_str();
-            error.set_error(cntl.ErrorCode(), "%s, [%s] %s",
-                                              saved_et.c_str(),
-                                              iter->to_string().c_str(),
-                                              cntl.ErrorText().c_str());
+            error.set_error(cntl.ErrorCode(), "%s, [%s] %s", saved_et.c_str(),
+                            iter->to_string().c_str(),
+                            cntl.ErrorText().c_str());
         }
     }
     return error;

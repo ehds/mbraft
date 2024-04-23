@@ -1,11 +1,11 @@
 // Copyright (c) 2015 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -14,11 +14,12 @@
 
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
-#include "braft/node.h"
 #include "braft/node_manager.h"
-#include "braft/file_service.h"
+
 #include "braft/builtin_service_impl.h"
 #include "braft/cli_service.h"
+#include "braft/file_service.h"
+#include "braft/node.h"
 
 namespace braft {
 
@@ -42,7 +43,7 @@ void NodeManager::remove_address(butil::EndPoint addr) {
     _addr_set.erase(addr);
 }
 
-int NodeManager::add_service(brpc::Server* server, 
+int NodeManager::add_service(brpc::Server* server,
                              const butil::EndPoint& listen_address) {
     if (server == NULL) {
         LOG(ERROR) << "server is NULL";
@@ -52,14 +53,14 @@ int NodeManager::add_service(brpc::Server* server,
         return 0;
     }
 
-    if (0 != server->AddService(file_service(), brpc::SERVER_DOESNT_OWN_SERVICE)) {
+    if (0 !=
+        server->AddService(file_service(), brpc::SERVER_DOESNT_OWN_SERVICE)) {
         LOG(ERROR) << "Fail to add FileService";
         return -1;
     }
 
-    if (0 != server->AddService(
-                new RaftServiceImpl(listen_address), 
-                brpc::SERVER_OWNS_SERVICE)) {
+    if (0 != server->AddService(new RaftServiceImpl(listen_address),
+                                brpc::SERVER_OWNS_SERVICE)) {
         LOG(ERROR) << "Fail to add RaftService";
         return -1;
     }
@@ -68,7 +69,8 @@ int NodeManager::add_service(brpc::Server* server,
         LOG(ERROR) << "Fail to add RaftStatService";
         return -1;
     }
-    if (0 != server->AddService(new CliServiceImpl, brpc::SERVER_OWNS_SERVICE)) {
+    if (0 !=
+        server->AddService(new CliServiceImpl, brpc::SERVER_OWNS_SERVICE)) {
         LOG(ERROR) << "Fail to add CliService";
         return -1;
     }
@@ -83,10 +85,10 @@ int NodeManager::add_service(brpc::Server* server,
 size_t NodeManager::_add_node(Maps& m, const NodeImpl* node) {
     NodeId node_id = node->node_id();
     std::pair<NodeMap::iterator, bool> ret = m.node_map.insert(
-            NodeMap::value_type(node_id, const_cast<NodeImpl*>(node)));
+        NodeMap::value_type(node_id, const_cast<NodeImpl*>(node)));
     if (ret.second) {
-        m.group_map.insert(GroupMap::value_type(
-                    node_id.group_id, const_cast<NodeImpl*>(node)));
+        m.group_map.insert(GroupMap::value_type(node_id.group_id,
+                                                const_cast<NodeImpl*>(node)));
         return 1;
     }
     return 0;
@@ -95,13 +97,13 @@ size_t NodeManager::_add_node(Maps& m, const NodeImpl* node) {
 size_t NodeManager::_remove_node(Maps& m, const NodeImpl* node) {
     NodeMap::iterator iter = m.node_map.find(node->node_id());
     if (iter == m.node_map.end() || iter->second.get() != node) {
-                                  // ^^
-                                  // Avoid duplicated nodes
+        // ^^
+        // Avoid duplicated nodes
         return 0;
     }
     m.node_map.erase(iter);
-    std::pair<GroupMap::iterator, GroupMap::iterator> 
-            range = m.group_map.equal_range(node->node_id().group_id);
+    std::pair<GroupMap::iterator, GroupMap::iterator> range =
+        m.group_map.equal_range(node->node_id().group_id);
     for (GroupMap::iterator it = range.first; it != range.second; ++it) {
         if (it->second == node) {
             m.group_map.erase(it);
@@ -125,7 +127,8 @@ bool NodeManager::remove(NodeImpl* node) {
     return _nodes.Modify(_remove_node, node) != 0;
 }
 
-scoped_refptr<NodeImpl> NodeManager::get(const GroupId& group_id, const PeerId& peer_id) {
+scoped_refptr<NodeImpl> NodeManager::get(const GroupId& group_id,
+                                         const PeerId& peer_id) {
     butil::DoublyBufferedData<Maps>::ScopedPtr ptr;
     if (_nodes.Read(&ptr) != 0) {
         return NULL;
@@ -138,15 +141,14 @@ scoped_refptr<NodeImpl> NodeManager::get(const GroupId& group_id, const PeerId& 
 }
 
 void NodeManager::get_nodes_by_group_id(
-        const GroupId& group_id, std::vector<scoped_refptr<NodeImpl> >* nodes) {
-
+    const GroupId& group_id, std::vector<scoped_refptr<NodeImpl> >* nodes) {
     nodes->clear();
     butil::DoublyBufferedData<Maps>::ScopedPtr ptr;
     if (_nodes.Read(&ptr) != 0) {
         return;
     }
-    std::pair<GroupMap::const_iterator, GroupMap::const_iterator> 
-            range = ptr->group_map.equal_range(group_id);
+    std::pair<GroupMap::const_iterator, GroupMap::const_iterator> range =
+        ptr->group_map.equal_range(group_id);
     for (GroupMap::const_iterator it = range.first; it != range.second; ++it) {
         nodes->push_back(it->second);
     }
@@ -159,11 +161,10 @@ void NodeManager::get_all_nodes(std::vector<scoped_refptr<NodeImpl> >* nodes) {
         return;
     }
     nodes->reserve(ptr->group_map.size());
-    for (GroupMap::const_iterator 
-            it = ptr->group_map.begin(); it != ptr->group_map.end(); ++it) {
+    for (GroupMap::const_iterator it = ptr->group_map.begin();
+         it != ptr->group_map.end(); ++it) {
         nodes->push_back(it->second);
     }
 }
 
 }  //  namespace braft
-

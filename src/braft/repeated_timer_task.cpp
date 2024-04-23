@@ -1,11 +1,11 @@
 // Copyright (c) 2016 Baidu.com, Inc. All Rights Reserved
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,20 +16,19 @@
 //          Ma,Jingwei(majingwei@baidu.com)
 
 #include "braft/repeated_timer_task.h"
+
 #include "braft/util.h"
 
 namespace braft {
 
 RepeatedTimerTask::RepeatedTimerTask()
-    : _timeout_ms(0)
-    , _stopped(true)
-    , _running(false)
-    , _destroyed(true)
-    , _invoking(false)
-{}
+    : _timeout_ms(0),
+      _stopped(true),
+      _running(false),
+      _destroyed(true),
+      _invoking(false) {}
 
-RepeatedTimerTask::~RepeatedTimerTask()
-{
+RepeatedTimerTask::~RepeatedTimerTask() {
     CHECK(!_running) << "Is still running";
     CHECK(_destroyed) << "destroy() must be invoked before descrution";
 }
@@ -91,9 +90,9 @@ void RepeatedTimerTask::start() {
     _stopped = false;
 
     BRAFT_RETURN_IF(_running);
-                 //  ^^^ _timer was not successfully deleted and the former task
-                 // is still running, in which case on_timedout would invoke
-                 // schedule as it would not see _stopped
+    //  ^^^ _timer was not successfully deleted and the former task
+    // is still running, in which case on_timedout would invoke
+    // schedule as it would not see _stopped
     _running = true;
     schedule(lck);
 }
@@ -117,8 +116,8 @@ void RepeatedTimerTask::on_timedout(void* arg) {
     // as run() might access the disk so the time it takes is probably beyond
     // expection
     bthread_t tid;
-    if (bthread_start_background(
-                &tid, NULL, run_on_timedout_in_new_thread, arg) != 0) {
+    if (bthread_start_background(&tid, NULL, run_on_timedout_in_new_thread,
+                                 arg) != 0) {
         PLOG(ERROR) << "Fail to start bthread";
         run_on_timedout_in_new_thread(arg);
     }
@@ -126,7 +125,7 @@ void RepeatedTimerTask::on_timedout(void* arg) {
 
 void RepeatedTimerTask::schedule(std::unique_lock<raft_mutex_t>& lck) {
     _next_duetime =
-            butil::milliseconds_from_now(adjust_timeout_ms(_timeout_ms));
+        butil::milliseconds_from_now(adjust_timeout_ms(_timeout_ms));
     if (bthread_timer_add(&_timer, _next_duetime, on_timedout, this) != 0) {
         lck.unlock();
         LOG(ERROR) << "Fail to add timer";
@@ -201,11 +200,11 @@ void RepeatedTimerTask::describe(std::ostream& os, bool use_html) {
             os << " INVOKING";
         } else {
             os << " SCHEDULING(in "
-               << butil::timespec_to_milliseconds(duetime) - butil::gettimeofday_ms()
+               << butil::timespec_to_milliseconds(duetime) -
+                      butil::gettimeofday_ms()
                << "ms)";
         }
     }
 }
 
 }  //  namespace braft
-
