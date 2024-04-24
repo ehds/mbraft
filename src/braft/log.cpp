@@ -33,8 +33,8 @@
 #include "braft/protobuf_file.h"
 #include "braft/util.h"
 
-//#define BRAFT_SEGMENT_OPEN_PATTERN "log_inprogress_%020ld"
-//#define BRAFT_SEGMENT_CLOSED_PATTERN "log_%020ld_%020ld"
+// #define BRAFT_SEGMENT_OPEN_PATTERN "log_inprogress_%020ld"
+// #define BRAFT_SEGMENT_CLOSED_PATTERN "log_%020ld_%020ld"
 #define BRAFT_SEGMENT_OPEN_PATTERN "log_inprogress_%020" PRId64
 #define BRAFT_SEGMENT_CLOSED_PATTERN "log_%020" PRId64 "_%020" PRId64
 #define BRAFT_SEGMENT_META_FILE "log_meta"

@@ -30,7 +30,7 @@
 #include "braft/remote_file_copier.h"
 #include "braft/util.h"
 
-//#define BRAFT_SNAPSHOT_PATTERN "snapshot_%020ld"
+// #define BRAFT_SNAPSHOT_PATTERN "snapshot_%020ld"
 #define BRAFT_SNAPSHOT_PATTERN "snapshot_%020" PRId64
 #define BRAFT_SNAPSHOT_META_FILE "__raft_snapshot_meta"
 

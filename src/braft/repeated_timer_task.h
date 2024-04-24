@@ -21,6 +21,7 @@
 #include <bthread/unstable.h>
 
 #include "braft/macros.h"
+#include "bthread/countdown_event.h"
 
 namespace braft {
 
@@ -50,7 +51,7 @@ class RepeatedTimerTask {
     void reset(int timeout_ms);
 
     // Destroy the timer
-    void destroy();
+    void destroy(bool wait_inflight_task = false);
 
     // Describe the current status of timer
     void describe(std::ostream& os, bool use_html);
@@ -78,6 +79,7 @@ class RepeatedTimerTask {
     bool _running;
     bool _destroyed;
     bool _invoking;
+    bthread::CountdownEvent _finish_event;
 };
 
 }  //  namespace braft
