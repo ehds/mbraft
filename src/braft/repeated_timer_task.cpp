@@ -26,7 +26,8 @@ RepeatedTimerTask::RepeatedTimerTask()
       _stopped(true),
       _running(false),
       _destroyed(true),
-      _invoking(false) {}
+      _invoking(false),
+      _finish_event(0) {}
 
 RepeatedTimerTask::~RepeatedTimerTask() {
     CHECK(!_running) << "Is still running";
@@ -71,6 +72,7 @@ void RepeatedTimerTask::on_timedout() {
             lck.unlock();
             on_destroy();
         }
+        _finish_event.signal();
         return;
     }
     return schedule(lck);
@@ -94,6 +96,7 @@ void RepeatedTimerTask::start() {
     // is still running, in which case on_timedout would invoke
     // schedule as it would not see _stopped
     _running = true;
+    _finish_event.reset(1);
     schedule(lck);
 }
 
@@ -156,7 +159,7 @@ void RepeatedTimerTask::reset(int timeout_ms) {
     // else on_timedout would invoke schdule
 }
 
-void RepeatedTimerTask::destroy() {
+void RepeatedTimerTask::destroy(bool wait_infight_task) {
     std::unique_lock<raft_mutex_t> lck(_mutex);
     BRAFT_RETURN_IF(_destroyed);
     _destroyed = true;
@@ -175,6 +178,13 @@ void RepeatedTimerTask::destroy() {
         on_destroy();
         return;
     }
+
+    if (wait_infight_task) {
+        _finish_event.wait();
+        CHECK(!_running);
+        return;
+    }
+
     CHECK(_running);
 }
 

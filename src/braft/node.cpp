@@ -1030,10 +1030,10 @@ void NodeImpl::shutdown(Closure* done) {
             _state = STATE_SHUTTING;
 
             // Destroy all the timer
-            _election_timer.destroy();
-            _vote_timer.destroy();
-            _stepdown_timer.destroy();
-            _snapshot_timer.destroy();
+            _election_timer.destroy(true /*wait*/);
+            _vote_timer.destroy(true /*wait*/);
+            _stepdown_timer.destroy(true /*wait*/);
+            _snapshot_timer.destroy(true /*wait*/);
 
             // stop replicator and fsm_caller wait
             if (_log_manager) {
