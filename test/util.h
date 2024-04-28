@@ -19,6 +19,7 @@
 
 #include <gflags/gflags.h>
 
+#include "butil/time.h"
 #include "braft/enum.pb.h"
 #include "braft/errno.pb.h"
 #include "braft/node.h"
@@ -384,9 +385,13 @@ public:
         }
         return NULL;
     }
-    
-    void wait_leader() {
-        while (true) {
+
+    // return true if there is a leader, false when reach timeout.
+    void wait_leader(int64_t timeout_ms = 100 * 1000 /*100 seconds*/) {
+        int64_t deadline = butil::timespec_to_microseconds(
+            butil::milliseconds_from_now(timeout_ms));
+
+        while (butil::gettimeofday_ms() < deadline) {
             braft::Node* node = leader();
             if (node) {
                 return;
@@ -394,6 +399,7 @@ public:
                 usleep(100 * 1000);
             }
         }
+        ASSERT_TRUE(false); // wait time out.
     }
 
     void check_node_status() {
