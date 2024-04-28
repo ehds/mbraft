@@ -16,6 +16,8 @@
 
 #include "braft/configuration_manager.h"
 
+#include <algorithm>
+
 namespace braft {
 
 int ConfigurationManager::add(ConfigurationEntry&& entry) {
@@ -31,17 +33,27 @@ int ConfigurationManager::add(ConfigurationEntry&& entry) {
 }
 
 void ConfigurationManager::truncate_prefix(const int64_t first_index_kept) {
-    while (!_configurations.empty() &&
-           _configurations.front().id.index < first_index_kept) {
-        _configurations.pop_front();
-    }
+    // Find the first element which index >= `first_index_kept`.
+    auto it = std::lower_bound(
+        _configurations.begin(), _configurations.end(), first_index_kept,
+        [](const ConfigurationEntry& entry, int64_t index) {
+            return entry.id.index < index;
+        });
+
+    // Remove prefix [begin, index).
+    _configurations.erase(_configurations.begin(), it);
 }
 
 void ConfigurationManager::truncate_suffix(const int64_t last_index_kept) {
-    while (!_configurations.empty() &&
-           _configurations.back().id.index > last_index_kept) {
-        _configurations.pop_back();
-    }
+    // Find the first element which index > `last_index_kept`.
+    auto it = std::upper_bound(
+        _configurations.begin(), _configurations.end(), last_index_kept,
+        [](int64_t index, const ConfigurationEntry& entry) {
+            return index < entry.id.index;
+        });
+
+    // Remove suffix [index, end].
+    _configurations.erase(it, _configurations.end());
 }
 
 void ConfigurationManager::set_snapshot(ConfigurationEntry&& entry) {
@@ -56,17 +68,19 @@ void ConfigurationManager::get(int64_t last_included_index,
         *conf = _snapshot;
         return;
     }
-    std::deque<ConfigurationEntry>::iterator it;
-    for (it = _configurations.begin(); it != _configurations.end(); ++it) {
-        if (it->id.index > last_included_index) {
-            break;
-        }
-    }
-    if (it == _configurations.begin()) {
-        *conf = _snapshot;
-        return;
-    }
-    --it;
+
+    // Entries index is strictly increase monotonically.
+    // We can use binary search to find the i which
+    // _configurations[i-1].index < `last_included_index` <=
+    // _configurations[i].id.index
+    // From end to begin, the first element which index <= `last_included_index`
+    auto it = std::lower_bound(
+        _configurations.rbegin(), _configurations.rend(), last_included_index,
+        [](const ConfigurationEntry& rhs, int64_t index) {
+            return rhs.id.index > index;
+        });
+
+    CHECK(it != _configurations.rend());
     *conf = *it;
 }
 

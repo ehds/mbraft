@@ -114,7 +114,7 @@ TEST_F(TestUsageSuits, Configuration) {
     std::set<PeerId> peer_set3;
     conf2.list_peers(&peer_set3);
     ASSERT_EQ(peer_set.size(), 3);
-    
+
     // invalid format.
     Configuration conf4;
     ASSERT_EQ(conf4.parse_from("1.1,1.1:100,1.1.1:100:3,aaabbbccc"), -1);
@@ -122,12 +122,16 @@ TEST_F(TestUsageSuits, Configuration) {
 
 TEST_F(TestUsageSuits, ConfigurationManager) {
     ConfigurationManager conf_manager;
-
     ConfigurationEntry it1;
     conf_manager.get(10, &it1);
     ASSERT_EQ(it1.id, LogId(0, 0));
     ASSERT_TRUE(it1.conf.empty());
+
+    // Truncate empty config manager.
+    conf_manager.truncate_prefix(42);
+    conf_manager.truncate_suffix(42);
     ASSERT_EQ(LogId(0, 0), conf_manager.last_configuration().id);
+
     ConfigurationEntry entry;
     std::vector<PeerId> peers;
     peers.emplace_back("1.1.1.1:1000:0");
@@ -138,26 +142,55 @@ TEST_F(TestUsageSuits, ConfigurationManager) {
     conf_manager.add(ConfigurationEntry{entry});
 
     ASSERT_EQ(LogId(8, 1), conf_manager.last_configuration().id);
-
+    conf_manager.get(8, &it1);
+    ASSERT_EQ(it1.id, entry.id);
     conf_manager.get(10, &it1);
     ASSERT_EQ(it1.id, entry.id);
 
+    // truncate suffix (8, end).
+    conf_manager.truncate_suffix(8);
+    // 8 must exists.
+    ASSERT_EQ(LogId(8, 1), conf_manager.last_configuration().id);
+
+    // truncate prefix [1, 8).
+    conf_manager.truncate_prefix(8);
+    // 8 must exists.
+    ASSERT_EQ(LogId(8, 1), conf_manager.last_configuration().id);
+
+    // truncate suffix (7, end).
     conf_manager.truncate_suffix(7);
+    // 8 not fount.
     ASSERT_EQ(LogId(0, 0), conf_manager.last_configuration().id);
 
+    // Add [10, 15, 20] entries.
     entry.id = LogId(10, 1);
     entry.conf = peers;
     conf_manager.add(ConfigurationEntry{entry});
     peers.emplace_back("1.1.1.1:1000:3");
+    entry.id = LogId(15, 1);
+    entry.conf = peers;
+    conf_manager.add(ConfigurationEntry{entry});
     entry.id = LogId(20, 1);
     entry.conf = peers;
     conf_manager.add(ConfigurationEntry{entry});
-    ASSERT_EQ(LogId(20, 1), conf_manager.last_configuration().id);
 
-    conf_manager.truncate_prefix(15);
     ASSERT_EQ(LogId(20, 1), conf_manager.last_configuration().id);
+    ConfigurationEntry ce;
+    conf_manager.get(16, &ce);
+    ASSERT_EQ(LogId(15, 1), ce.id);
+    // conf_manager.get(8, &ce); // FATAL.
+    // ASSERT_EQ(LogId(0, 0), ce.id);
 
-    conf_manager.truncate_prefix(25);
+    conf_manager.truncate_prefix(10);
+    conf_manager.get(10, &ce); 
+    ASSERT_EQ(LogId(10, 1), ce.id);
+
+    ASSERT_EQ(LogId(20, 1), conf_manager.last_configuration().id);
+    conf_manager.truncate_prefix(16);
+    ASSERT_EQ(LogId(20, 1), conf_manager.last_configuration().id);
+    conf_manager.truncate_suffix(20);
+    ASSERT_EQ(LogId(20, 1), conf_manager.last_configuration().id);
+    conf_manager.truncate_suffix(19);
     ASSERT_EQ(LogId(0, 0), conf_manager.last_configuration().id);
 }
 }  // namespace test
