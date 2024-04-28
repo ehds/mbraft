@@ -15,6 +15,7 @@
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 
 #include "braft/configuration_manager.h"
+
 #include <algorithm>
 
 namespace braft {
