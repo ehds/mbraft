@@ -24,6 +24,9 @@
 #include <butil/unique_ptr.h>       // std::unique_ptr
 #include <gflags/gflags.h>          // DEFINE_int32
 
+#include <algorithm>
+#include <random>
+
 #include "braft/ballot_box.h"         // BallotBox
 #include "braft/log_entry.h"          // LogEntry
 #include "braft/node.h"               // NodeImpl
@@ -627,14 +630,14 @@ int Replicator::_prepare_entry(int offset, EntryMeta* em, butil::IOBuf* data) {
     }
     em->set_term(entry->id.term);
     em->set_type(entry->type);
-    if (entry->peers != NULL) {
-        CHECK(!entry->peers->empty()) << "log_index=" << log_index;
-        for (size_t i = 0; i < entry->peers->size(); ++i) {
-            em->add_peers((*entry->peers)[i].to_string());
+    if (!entry->peers.empty()) {
+        CHECK(!entry->peers.empty()) << "log_index=" << log_index;
+        for (size_t i = 0; i < entry->peers.size(); ++i) {
+            em->add_peers((entry->peers)[i].to_string());
         }
-        if (entry->old_peers != NULL) {
-            for (size_t i = 0; i < entry->old_peers->size(); ++i) {
-                em->add_old_peers((*entry->old_peers)[i].to_string());
+        if (!entry->old_peers.empty()) {
+            for (size_t i = 0; i < entry->old_peers.size(); ++i) {
+                em->add_old_peers((entry->old_peers)[i].to_string());
             }
         }
     } else {
@@ -1572,7 +1575,10 @@ int ReplicatorGroup::find_the_next_candidate(PeerId* peer_id,
          iter != _rmap.end(); ++iter) {
         peers.emplace_back(peerInfo(iter->first, iter->second));
     }
-    std::random_shuffle(peers.begin(), peers.end());
+
+    std::random_device rd;
+    std::mt19937 g(rd());
+    std::shuffle(peers.begin(), peers.end(), g);
     for (auto iter = peers.begin(); iter != peers.end(); ++iter) {
         if (!conf.contains(iter->peer_id)) {
             continue;

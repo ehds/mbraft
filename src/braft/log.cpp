@@ -327,8 +327,7 @@ int Segment::load(ConfigurationManager* configuration_manager) {
             entry->id.term = header.term;
             butil::Status status = parse_configuration_meta(data, entry);
             if (status.ok()) {
-                ConfigurationEntry conf_entry(*entry);
-                configuration_manager->add(conf_entry);
+                configuration_manager->add({std::move(*entry)});
             } else {
                 LOG(ERROR) << "fail to parse configuration meta, path: "
                            << _path << " entry_off " << entry_off;

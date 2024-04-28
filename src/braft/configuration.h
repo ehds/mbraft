@@ -73,7 +73,9 @@ struct PeerId {
     bool is_empty() const {
         return (addr.ip == butil::IP_ANY && addr.port == 0 && idx == 0);
     }
+
     bool is_witness() const { return role == WITNESS; }
+
     int parse(const std::string& str) {
         reset();
         char ip_str[64];

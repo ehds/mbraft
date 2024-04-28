@@ -40,8 +40,8 @@ struct LogEntry : public butil::RefCountedThreadSafe<LogEntry> {
    public:
     EntryType type;  // log type
     LogId id;
-    std::vector<PeerId>* peers;      // peers
-    std::vector<PeerId>* old_peers;  // peers
+    std::vector<PeerId> peers;      // peers
+    std::vector<PeerId> old_peers;  // peers
     butil::IOBuf data;
 
     LogEntry();

@@ -135,7 +135,8 @@ TEST_F(TestUsageSuits, ConfigurationManager) {
     peers.emplace_back("1.1.1.1:1000:2");
     entry.conf = peers;
     entry.id = {8, 1};
-    conf_manager.add(entry);
+    conf_manager.add(ConfigurationEntry{entry});
+
     ASSERT_EQ(LogId(8, 1), conf_manager.last_configuration().id);
 
     conf_manager.get(10, &it1);
@@ -146,11 +147,11 @@ TEST_F(TestUsageSuits, ConfigurationManager) {
 
     entry.id = LogId(10, 1);
     entry.conf = peers;
-    conf_manager.add(entry);
+    conf_manager.add(ConfigurationEntry{entry});
     peers.emplace_back("1.1.1.1:1000:3");
     entry.id = LogId(20, 1);
     entry.conf = peers;
-    conf_manager.add(entry);
+    conf_manager.add(ConfigurationEntry{entry});
     ASSERT_EQ(LogId(20, 1), conf_manager.last_configuration().id);
 
     conf_manager.truncate_prefix(15);

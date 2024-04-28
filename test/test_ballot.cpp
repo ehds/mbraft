@@ -17,6 +17,7 @@
 #include <optional>
 
 #include "braft/ballot.h"
+#include "bthread/countdown_event.h"
 #include "common.h"
 
 class BallotTest : public testing::Test {};
