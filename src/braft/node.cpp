@@ -487,8 +487,7 @@ int NodeImpl::bootstrap(const BootstrapOptions& options) {
     entry->AddRef();
     entry->id.term = _current_term;
     entry->type = ENTRY_TYPE_CONFIGURATION;
-    entry->peers = new std::vector<PeerId>;
-    options.group_conf.list_peers(entry->peers);
+    options.group_conf.list_peers(&(entry->peers));
 
     std::vector<LogEntry*> entries;
     entries.push_back(entry);
@@ -2141,11 +2140,9 @@ void NodeImpl::unsafe_apply_configuration(const Configuration& new_conf,
     entry->AddRef();
     entry->id.term = _current_term;
     entry->type = ENTRY_TYPE_CONFIGURATION;
-    entry->peers = new std::vector<PeerId>;
-    new_conf.list_peers(entry->peers);
+    new_conf.list_peers(&(entry->peers));
     if (old_conf) {
-        entry->old_peers = new std::vector<PeerId>;
-        old_conf->list_peers(entry->old_peers);
+        old_conf->list_peers(&(entry->old_peers));
     }
     ConfigurationChangeDone* configuration_change_done =
         new ConfigurationChangeDone(this, _current_term, leader_start,
@@ -2593,15 +2590,13 @@ void NodeImpl::handle_append_entries_request(
             log_entry->id.index = index;
             log_entry->type = (EntryType)entry.type();
             if (entry.peers_size() > 0) {
-                log_entry->peers = new std::vector<PeerId>;
                 for (int i = 0; i < entry.peers_size(); i++) {
-                    log_entry->peers->push_back(entry.peers(i));
+                    log_entry->peers.push_back(entry.peers(i));
                 }
                 CHECK_EQ(log_entry->type, ENTRY_TYPE_CONFIGURATION);
                 if (entry.old_peers_size() > 0) {
-                    log_entry->old_peers = new std::vector<PeerId>;
                     for (int i = 0; i < entry.old_peers_size(); i++) {
-                        log_entry->old_peers->push_back(entry.old_peers(i));
+                        log_entry->old_peers.push_back(entry.old_peers(i));
                     }
                 }
             } else {

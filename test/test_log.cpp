@@ -815,10 +815,9 @@ TEST_F(LogStorageTest, configuration) {
         entry.type = braft::ENTRY_TYPE_CONFIGURATION;
         entry.id.term = 1;
         entry.id.index = 2;
-        entry.peers = new std::vector<braft::PeerId>;
-        entry.peers->push_back(braft::PeerId("1.1.1.1:1000:0"));
-        entry.peers->push_back(braft::PeerId("1.1.1.1:2000:0"));
-        entry.peers->push_back(braft::PeerId("1.1.1.1:3000:0"));
+        entry.peers.push_back(braft::PeerId("1.1.1.1:1000:0"));
+        entry.peers.push_back(braft::PeerId("1.1.1.1:2000:0"));
+        entry.peers.push_back(braft::PeerId("1.1.1.1:3000:0"));
         storage->append_entry(&entry);
     }
 
@@ -851,9 +850,8 @@ TEST_F(LogStorageTest, configuration) {
         entry.type = braft::ENTRY_TYPE_CONFIGURATION;
         entry.id.term = 1;
         entry.id.index = index;
-        entry.peers = new std::vector<braft::PeerId>;
-        entry.peers->push_back(braft::PeerId("1.1.1.1:1000:0"));
-        entry.peers->push_back(braft::PeerId("1.1.1.1:2000:0"));
+        entry.peers.push_back(braft::PeerId("1.1.1.1:1000:0"));
+        entry.peers.push_back(braft::PeerId("1.1.1.1:2000:0"));
         storage->append_entry(&entry);
     }
 
@@ -1109,14 +1107,12 @@ TEST_F(LogStorageTest, joint_configuration) {
     for (int i = 1; i <= 20; ++i) {
         scoped_refptr<braft::LogEntry> entry = new braft::LogEntry;
         entry->id = braft::LogId(i, 1);
-        entry->peers = new std::vector<braft::PeerId>;
         entry->type = braft::ENTRY_TYPE_CONFIGURATION;
         for (int j = 0; j < 3; ++j) {
-            entry->peers->push_back("127.0.0.1:" + std::to_string(i + j));
+            entry->peers.push_back("127.0.0.1:" + std::to_string(i + j));
         }
-        entry->old_peers = new std::vector<braft::PeerId>;
         for (int j = 1; j <= 3; ++j) {
-            entry->old_peers->push_back("127.0.0.1:" + std::to_string(i + j));
+            entry->old_peers.push_back("127.0.0.1:" + std::to_string(i + j));
         }
         ASSERT_EQ(0, log_storage->append_entry(entry));
     }
@@ -1125,8 +1121,8 @@ TEST_F(LogStorageTest, joint_configuration) {
         braft::LogEntry* entry = log_storage->get_entry(i);
         ASSERT_TRUE(entry != NULL);
         ASSERT_EQ(entry->type, braft::ENTRY_TYPE_CONFIGURATION);
-        ASSERT_TRUE(entry->peers != NULL);
-        ASSERT_TRUE(entry->old_peers != NULL);
+        ASSERT_TRUE(!entry->peers.empty());
+        ASSERT_TRUE(!entry->old_peers.empty());
         braft::Configuration conf;
         for (int j = 0; j < 3; ++j) {
             conf.add_peer("127.0.0.1:" + std::to_string(i + j));
@@ -1135,10 +1131,10 @@ TEST_F(LogStorageTest, joint_configuration) {
         for (int j = 1; j <= 3; ++j) {
             old_conf.add_peer("127.0.0.1:" + std::to_string(i + j));
         }
-        ASSERT_TRUE(conf.equals(*entry->peers))
-            << conf << " xxxx " << braft::Configuration(*entry->peers);
+        ASSERT_TRUE(conf.equals(entry->peers))
+            << conf << " xxxx " << braft::Configuration(entry->peers);
                     
-        ASSERT_TRUE(old_conf.equals(*entry->old_peers));
+        ASSERT_TRUE(old_conf.equals(entry->old_peers));
         entry->Release();
     }
 
@@ -1149,8 +1145,8 @@ TEST_F(LogStorageTest, joint_configuration) {
         braft::LogEntry* entry = log_storage->get_entry(i);
         ASSERT_TRUE(entry != NULL);
         ASSERT_EQ(entry->type, braft::ENTRY_TYPE_CONFIGURATION);
-        ASSERT_TRUE(entry->peers != NULL);
-        ASSERT_TRUE(entry->old_peers != NULL);
+        ASSERT_TRUE(!entry->peers.empty());
+        ASSERT_TRUE(!entry->old_peers.empty());
         braft::Configuration conf;
         for (int j = 0; j < 3; ++j) {
             conf.add_peer("127.0.0.1:" + std::to_string(i + j));
@@ -1159,10 +1155,10 @@ TEST_F(LogStorageTest, joint_configuration) {
         for (int j = 1; j <= 3; ++j) {
             old_conf.add_peer("127.0.0.1:" + std::to_string(i + j));
         }
-        ASSERT_TRUE(conf.equals(*entry->peers))
-            << conf << " xxxx " << braft::Configuration(*entry->peers);
+        ASSERT_TRUE(conf.equals(entry->peers))
+            << conf << " xxxx " << braft::Configuration(entry->peers);
                     
-        ASSERT_TRUE(old_conf.equals(*entry->old_peers));
+        ASSERT_TRUE(old_conf.equals(entry->old_peers));
         entry->Release();
     }
 
@@ -1170,8 +1166,8 @@ TEST_F(LogStorageTest, joint_configuration) {
         braft::LogEntry* entry = log_storage->get_entry(i);
         ASSERT_TRUE(entry != NULL);
         ASSERT_EQ(entry->type, braft::ENTRY_TYPE_CONFIGURATION);
-        ASSERT_TRUE(entry->peers != NULL);
-        ASSERT_TRUE(entry->old_peers != NULL);
+        ASSERT_TRUE(!entry->peers.empty());
+        ASSERT_TRUE(!entry->old_peers.empty());
         ASSERT_EQ(1, entry->id.term);
         braft::Configuration conf;
         for (int j = 0; j < 3; ++j) {
@@ -1181,8 +1177,8 @@ TEST_F(LogStorageTest, joint_configuration) {
         for (int j = 1; j <= 3; ++j) {
             old_conf.add_peer("127.0.0.1:" + std::to_string(i + j));
         }
-        ASSERT_TRUE(conf.equals(*entry->peers));
-        ASSERT_TRUE(old_conf.equals(*entry->old_peers));
+        ASSERT_TRUE(conf.equals(entry->peers));
+        ASSERT_TRUE(old_conf.equals(entry->old_peers));
         entry->Release();
     }
 

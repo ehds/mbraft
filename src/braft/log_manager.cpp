@@ -419,8 +419,7 @@ void LogManager::append_entries(std::vector<LogEntry*>* entries,
         // Add ref for disk_thread
         (*entries)[i]->AddRef();
         if ((*entries)[i]->type == ENTRY_TYPE_CONFIGURATION) {
-            ConfigurationEntry conf_entry(*((*entries)[i]));
-            _config_manager->add(conf_entry);
+            _config_manager->add({*((*entries)[i])});
         }
     }
 
@@ -631,7 +630,7 @@ void LogManager::set_snapshot(const SnapshotMeta* meta) {
     entry.id = LogId(meta->last_included_index(), meta->last_included_term());
     entry.conf = conf;
     entry.old_conf = old_conf;
-    _config_manager->set_snapshot(entry);
+    _config_manager->set_snapshot(std::move(entry));
     int64_t term = unsafe_get_term(meta->last_included_index());
 
     const LogId last_but_one_snapshot_id = _last_snapshot_id;

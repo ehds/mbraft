@@ -30,9 +30,17 @@ struct ConfigurationEntry {
     ConfigurationEntry() {}
     ConfigurationEntry(const LogEntry& entry) {
         id = entry.id;
-        conf = *(entry.peers);
-        if (entry.old_peers) {
-            old_conf = *(entry.old_peers);
+        conf = (entry.peers);
+        if (!entry.old_peers.empty()) {
+            old_conf = entry.old_peers;
+        }
+    }
+
+    ConfigurationEntry(LogEntry&& entry) {
+        id = entry.id;
+        conf = std::move(entry.peers);
+        if (!entry.old_peers.empty()) {
+            old_conf = std::move(entry.old_peers);
         }
     }
 
@@ -55,7 +63,7 @@ class ConfigurationManager {
     ~ConfigurationManager() {}
 
     // add new configuration at index
-    int add(const ConfigurationEntry& entry);
+    int add(ConfigurationEntry&& entry);
 
     // [1, first_index_kept) are being discarded
     void truncate_prefix(int64_t first_index_kept);
@@ -63,7 +71,7 @@ class ConfigurationManager {
     // (last_index_kept, infinity) are being discarded
     void truncate_suffix(int64_t last_index_kept);
 
-    void set_snapshot(const ConfigurationEntry& snapshot);
+    void set_snapshot(ConfigurationEntry&& snapshot);
 
     void get(int64_t last_included_index, ConfigurationEntry* entry);
 

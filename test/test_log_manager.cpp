@@ -141,10 +141,9 @@ TEST_F(LogManagerTest, configuration_changes) {
         braft::LogEntry* entry = new braft::LogEntry;
         entry->AddRef();
         entry->type = braft::ENTRY_TYPE_CONFIGURATION;
-        entry->peers = new std::vector<braft::PeerId>(peers);
+        entry->peers = peers;
         if (peers.size() > 1u) {
-            entry->old_peers = new std::vector<braft::PeerId>(
-                    peers.begin() + 1, peers.end());
+            entry->old_peers = {peers.begin() + 1, peers.end()};
         }
         entry->AddRef();
         entry->id = braft::LogId(i + 1, 1);
@@ -198,7 +197,7 @@ TEST_F(LogManagerTest, truncate_suffix_also_revert_configuration) {
         braft::LogEntry* entry = new braft::LogEntry;
         entry->AddRef();
         entry->type = braft::ENTRY_TYPE_CONFIGURATION;
-        entry->peers = new std::vector<braft::PeerId>(peers);
+        entry->peers = std::move(peers);
         entry->AddRef();
         entry->id = braft::LogId(i + 1, 1);
         saved_entries[i] = entry;
@@ -379,7 +378,7 @@ TEST_F(LogManagerTest, pipelined_append) {
         entry->AddRef();
         entry->type = braft::ENTRY_TYPE_CONFIGURATION;
         entry->id = braft::LogId(N, 1);
-        entry->peers = new std::vector<braft::PeerId>(peers);
+        entry->peers = std::move(peers);
         entries0.push_back(entry);
     }
     SyncClosure sc0;
@@ -410,7 +409,7 @@ TEST_F(LogManagerTest, pipelined_append) {
         entry->AddRef();
         entry->type = braft::ENTRY_TYPE_CONFIGURATION;
         entry->id = braft::LogId(N, 2);
-        entry->peers = new std::vector<braft::PeerId>(peers);
+        entry->peers = std::move(peers);
         entries1.push_back(entry);
     }
     SyncClosure sc1;

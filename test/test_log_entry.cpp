@@ -35,7 +35,7 @@ TEST_F(TestUsageSuits, LogEntry) {
     peers.push_back(braft::PeerId("1.2.3.4:2000"));
     peers.push_back(braft::PeerId("1.2.3.4:3000"));
     entry->type = braft::ENTRY_TYPE_CONFIGURATION;
-    entry->peers = new std::vector<braft::PeerId>(peers);
+    entry->peers = std::move(peers);
 
     entry->AddRef();
     entry->Release();

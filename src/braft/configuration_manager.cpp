@@ -18,7 +18,7 @@
 
 namespace braft {
 
-int ConfigurationManager::add(const ConfigurationEntry& entry) {
+int ConfigurationManager::add(ConfigurationEntry&& entry) {
     if (!_configurations.empty()) {
         if (_configurations.back().id.index >= entry.id.index) {
             CHECK(false) << "Did you forget to call truncate_suffix before "
@@ -26,7 +26,7 @@ int ConfigurationManager::add(const ConfigurationEntry& entry) {
             return -1;
         }
     }
-    _configurations.push_back(entry);
+    _configurations.push_back(std::move(entry));
     return 0;
 }
 
@@ -44,9 +44,9 @@ void ConfigurationManager::truncate_suffix(const int64_t last_index_kept) {
     }
 }
 
-void ConfigurationManager::set_snapshot(const ConfigurationEntry& entry) {
+void ConfigurationManager::set_snapshot(ConfigurationEntry&& entry) {
     CHECK_GE(entry.id, _snapshot.id);
-    _snapshot = entry;
+    _snapshot = std::move(entry);
 }
 
 void ConfigurationManager::get(int64_t last_included_index,
