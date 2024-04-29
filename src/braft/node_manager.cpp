@@ -16,6 +16,7 @@
 
 #include "braft/node_manager.h"
 
+#include "_deps/brpc/src/src/butil/details/extended_endpoint.hpp"
 #include "braft/builtin_service_impl.h"
 #include "braft/cli_service.h"
 #include "braft/file_service.h"
@@ -29,7 +30,7 @@ NodeManager::~NodeManager() {}
 
 bool NodeManager::server_exists(butil::EndPoint addr) {
     BAIDU_SCOPED_LOCK(_mutex);
-    if (addr.ip != butil::IP_ANY) {
+    if (!is_endpoint_extended(addr) && addr.ip != butil::IP_ANY) {
         butil::EndPoint any_addr(butil::IP_ANY, addr.port);
         if (_addr_set.find(any_addr) != _addr_set.end()) {
             return true;

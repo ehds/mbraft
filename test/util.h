@@ -252,9 +252,11 @@ public:
               int snapshot_interval_s = 30,
               braft::Closure* leader_start_closure = NULL, bool witness = false) {
         if (_server_map[listen_addr] == NULL) {
+            brpc::ServerOptions server_options;
+            server_options.server_info_name = butil::endpoint2str(listen_addr).c_str();
             brpc::Server* server = new brpc::Server();
             if (braft::add_service(server, listen_addr) != 0 
-                    || server->Start(listen_addr, NULL) != 0) {
+                    || server->Start(listen_addr, &server_options) != 0) {
                 LOG(ERROR) << "Fail to start raft service";
                 delete server;
                 return -1;

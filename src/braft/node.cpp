@@ -25,6 +25,7 @@
 
 #include <optional>
 
+#include "_deps/brpc/src/src/butil/endpoint.h"
 #include "braft/builtin_service_impl.h"
 #include "braft/configuration.h"
 #include "braft/errno.pb.h"
@@ -506,7 +507,8 @@ int NodeImpl::init(const NodeOptions& options) {
     _options = options;
 
     // check _server_id
-    if (butil::IP_ANY == _server_id.addr.ip) {
+    if (!butil::is_endpoint_extended(_server_id.addr) &&
+        butil::IP_ANY == _server_id.addr.ip) {
         LOG(ERROR) << "Group " << _group_id
                    << " Node can't started from IP_ANY";
         return -1;

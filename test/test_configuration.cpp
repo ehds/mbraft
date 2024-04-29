@@ -69,6 +69,33 @@ TEST_F(TestUsageSuits, PeerId) {
 
     PeerId id3("1.2.3.4:1000:0");
     LOG(INFO) << "id:" << id3;
+
+    // UDS format
+    PeerId id4;
+    id4.parse("unix:/path/to/sock:1:1");
+    LOG(INFO) << "id:" << id4;
+    ASSERT_EQ(id4.idx, 1);
+    ASSERT_EQ(id4.role, 1);
+
+    PeerId id5;
+    ASSERT_EQ(id5.parse("invalid:1:1"), -1);
+
+    // ipv6 format
+    PeerId id6;
+    id6.parse("[::1]:1");
+    ASSERT_EQ(id6.idx, 0);
+    ASSERT_EQ(id6.role, 0);
+    LOG(INFO) << "id:" << id6;
+
+    PeerId id7;
+    id7.parse("[::1]:1:1:1");
+    ASSERT_EQ(id7.idx, 1);
+    ASSERT_EQ(id7.role, 1);
+    LOG(INFO) << "id:" << id7;
+
+    PeerId id8;
+    ASSERT_EQ(id8.parse("[:::1:1"), -1);
+    ASSERT_EQ(id8.parse("::]:1:1"), -1);
 }
 
 TEST_F(TestUsageSuits, Configuration) {
