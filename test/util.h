@@ -18,7 +18,10 @@
 #define PUBLIC_RAFT_TEST_UTIL_H
 
 #include <gflags/gflags.h>
+#include <algorithm>
 
+#include "_deps/brpc/src/src/butil/endpoint.h"
+#include "brpc/server.h"
 #include "butil/time.h"
 #include "braft/enum.pb.h"
 #include "braft/errno.pb.h"
@@ -278,12 +281,15 @@ public:
         }
         options.fsm = fsm;
         options.node_owns_fsm = true;
+        std::string endpoint_str = butil::endpoint2str(listen_addr).c_str();
         butil::string_printf(&options.log_uri, "local://./data/%s/log",
-                            butil::endpoint2str(listen_addr).c_str());
-        butil::string_printf(&options.raft_meta_uri, "local://./data/%s/raft_meta",
-                            butil::endpoint2str(listen_addr).c_str());
-        butil::string_printf(&options.snapshot_uri, "local://./data/%s/snapshot",
-                            butil::endpoint2str(listen_addr).c_str());
+                             endpoint_str.c_str());
+        butil::string_printf(&options.raft_meta_uri,
+                             "local://./data/%s/raft_meta",
+                             endpoint_str.c_str());
+        butil::string_printf(&options.snapshot_uri,
+                             "local://./data/%s/snapshot",
+                             endpoint_str.c_str());
 
         options.snapshot_throttle = &_throttle;
 
@@ -523,7 +529,7 @@ private:
         braft::Node* node = NULL;
         std::vector<braft::Node*> new_nodes;
         for (size_t i = 0; i < _nodes.size(); i++) {
-            if (addr.port == _nodes[i]->node_id().peer_id.addr.port) {
+            if (addr == _nodes[i]->node_id().peer_id.addr) {
                 node = _nodes[i];
             } else {
                 new_nodes.push_back(_nodes[i]);

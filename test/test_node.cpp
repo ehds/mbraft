@@ -18,6 +18,7 @@
 #include <sys/types.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 #include "../test/util.h"
