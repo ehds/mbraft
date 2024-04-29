@@ -85,13 +85,13 @@ struct PeerId {
         //      |- ip:port
         //      |- [ipv6]:port
         //      |- unix:path/to/sock
-
-        std::regex peerid_reg(
-            "((([^:]+)|(\\[.*\\])):[^:]+)(:(\\d)?)?(:(\\d+)?)?");
+        // clang-format off
+        std::regex peerid_reg("((([^:]+)|(\\[.*\\])):[^:]+)(:(\\d)?)?(:(\\d+)?)?");
         //                            ^          ^             ^            ^
         //                            |          |             |            |
         //                      unix,host,ipv4   |            idx(6)(opt)   |
-        //                                     ipv6 role(8)(opt)
+        //                                     ipv6                     role(8)(opt)
+        // clang-format on
         std::cmatch m;
         auto ret = std::regex_match(str.c_str(), m, peerid_reg);
         if (!ret || m.size() != 9) {
