@@ -25,10 +25,10 @@
 
 #include <map>
 #include <ostream>
+#include <regex>
 #include <set>
 #include <string>
 #include <vector>
-
 namespace braft {
 
 typedef std::string GroupId;
@@ -78,22 +78,47 @@ struct PeerId {
 
     int parse(const std::string& str) {
         reset();
-        char ip_str[64];
-        int value = REPLICA;
-        if (2 > sscanf(str.c_str(), "%[^:]%*[:]%d%*[:]%d%*[:]%d", ip_str,
-                       &addr.port, &idx, &value)) {
+        // peer_id format:
+        //   endpoint:idx:role
+        //      ^
+        //      |- host:port
+        //      |- ip:port
+        //      |- [ipv6]:port
+        //      |- unix:path/to/sock
+        // clang-format off
+        std::regex peerid_reg("((([^:]+)|(\\[.*\\])):[^:]+)(:(\\d)?)?(:(\\d+)?)?");
+        //                            ^          ^             ^            ^
+        //                            |          |             |            |
+        //                      unix,host,ipv4   |            idx(6)(opt)   |
+        //                                     ipv6                     role(8)(opt)
+        // clang-format on
+        std::cmatch m;
+        auto ret = std::regex_match(str.c_str(), m, peerid_reg);
+        if (!ret || m.size() != 9) {
+            return -1;
+        }
+
+        // Using str2endpoint to check endpoint is valid.
+        std::string enpoint_str = m[1];
+        if (butil::str2endpoint(enpoint_str.c_str(), &addr) != 0) {
             reset();
             return -1;
         }
-        role = (Role)value;
-        if (role > WITNESS) {
-            reset();
-            return -1;
+
+        if (m[6].matched) {
+            // Check idx.
+            idx = std::stoi(m[6]);
         }
-        if (0 != butil::str2ip(ip_str, &addr.ip)) {
-            reset();
-            return -1;
+
+        // Check role if it existed.
+        if (m[8].matched) {
+            role = static_cast<Role>(std::stoi(m[8]));
+            if (role > WITNESS) {
+                reset();
+                return -1;
+            }
         }
+
         return 0;
     }
 

@@ -37,6 +37,7 @@
 #include "braft/snapshot_executor.h"
 #include "braft/sync_point.h"
 #include "braft/util.h"
+#include "butil/endpoint.h"
 #include "butil/logging.h"
 
 namespace braft {
@@ -506,7 +507,8 @@ int NodeImpl::init(const NodeOptions& options) {
     _options = options;
 
     // check _server_id
-    if (butil::IP_ANY == _server_id.addr.ip) {
+    if (!butil::is_endpoint_extended(_server_id.addr) &&
+        butil::IP_ANY == _server_id.addr.ip) {
         LOG(ERROR) << "Group " << _group_id
                    << " Node can't started from IP_ANY";
         return -1;

@@ -18,7 +18,10 @@
 #define PUBLIC_RAFT_TEST_UTIL_H
 
 #include <gflags/gflags.h>
+#include <algorithm>
 
+#include "_deps/brpc/src/src/butil/endpoint.h"
+#include "brpc/server.h"
 #include "butil/time.h"
 #include "braft/enum.pb.h"
 #include "braft/errno.pb.h"
@@ -252,9 +255,11 @@ public:
               int snapshot_interval_s = 30,
               braft::Closure* leader_start_closure = NULL, bool witness = false) {
         if (_server_map[listen_addr] == NULL) {
+            brpc::ServerOptions server_options;
+            server_options.server_info_name = butil::endpoint2str(listen_addr).c_str();
             brpc::Server* server = new brpc::Server();
             if (braft::add_service(server, listen_addr) != 0 
-                    || server->Start(listen_addr, NULL) != 0) {
+                    || server->Start(listen_addr, &server_options) != 0) {
                 LOG(ERROR) << "Fail to start raft service";
                 delete server;
                 return -1;
@@ -276,12 +281,15 @@ public:
         }
         options.fsm = fsm;
         options.node_owns_fsm = true;
+        std::string endpoint_str = butil::endpoint2str(listen_addr).c_str();
         butil::string_printf(&options.log_uri, "local://./data/%s/log",
-                            butil::endpoint2str(listen_addr).c_str());
-        butil::string_printf(&options.raft_meta_uri, "local://./data/%s/raft_meta",
-                            butil::endpoint2str(listen_addr).c_str());
-        butil::string_printf(&options.snapshot_uri, "local://./data/%s/snapshot",
-                            butil::endpoint2str(listen_addr).c_str());
+                             endpoint_str.c_str());
+        butil::string_printf(&options.raft_meta_uri,
+                             "local://./data/%s/raft_meta",
+                             endpoint_str.c_str());
+        butil::string_printf(&options.snapshot_uri,
+                             "local://./data/%s/snapshot",
+                             endpoint_str.c_str());
 
         options.snapshot_throttle = &_throttle;
 
@@ -388,7 +396,7 @@ public:
 
     // return true if there is a leader, false when reach timeout.
     void wait_leader(int64_t timeout_ms = 100 * 1000 /*100 seconds*/) {
-        int64_t deadline = butil::timespec_to_microseconds(
+        int64_t deadline = butil::timespec_to_milliseconds(
             butil::milliseconds_from_now(timeout_ms));
 
         while (butil::gettimeofday_ms() < deadline) {
@@ -521,7 +529,7 @@ private:
         braft::Node* node = NULL;
         std::vector<braft::Node*> new_nodes;
         for (size_t i = 0; i < _nodes.size(); i++) {
-            if (addr.port == _nodes[i]->node_id().peer_id.addr.port) {
+            if (addr == _nodes[i]->node_id().peer_id.addr) {
                 node = _nodes[i];
             } else {
                 new_nodes.push_back(_nodes[i]);

@@ -18,6 +18,7 @@
 #include <sys/types.h>
 
 #include <algorithm>
+#include <string>
 #include <vector>
 
 #include "../test/util.h"
@@ -61,6 +62,7 @@ protected:
         }
         LOG(INFO) << "Start unitests: " << GetParam();
         ::system("rm -rf data");
+        ::system("mkdir data");
         ASSERT_EQ(0, braft::g_num_nodes.get_value());
     }
     void TearDown() {
@@ -112,6 +114,36 @@ TEST_P(NodeTest, Server) {
     ASSERT_EQ(0, braft::add_service(&server2, "0.0.0.0:5007"));
     server1.Start("0.0.0.0:5006", NULL);
     server2.Start("0.0.0.0:5007", NULL);
+}
+
+TEST_P(NodeTest, UDSNode) {
+    braft::PeerId peer0("unix:data/0.sock");
+    braft::PeerId peer1("unix:data/1.sock");
+    braft::PeerId peer2("unix:data/2.sock");
+    std::vector<braft::PeerId> peers = {peer0, peer1, peer2};
+    Cluster cluster("unittest", peers);
+
+    for (int i = 0; i < 3; i++) {
+        cluster.start(peers[i].addr);
+    }
+    cluster.wait_leader();
+    LOG(INFO) << "leader:" << cluster.leader()->leader_id().to_string();
+}
+
+TEST_P(NodeTest, IPV6Node) {
+    std::vector<braft::PeerId> peers;
+    braft::PeerId peer0("[::1]:5006");
+    braft::PeerId peer1("[::1]:5007");
+    braft::PeerId peer2("[::1]:5008");
+    peers = {peer0, peer1, peer2};
+
+    Cluster cluster("unittest", peers);
+    for (int i = 0; i < 3; i++) {
+        cluster.start(peers[i].addr);
+    }
+
+    cluster.wait_leader();
+    LOG(INFO) << "leader:" << cluster.leader()->leader_id().to_string();
 }
 
 TEST_P(NodeTest, SingleNode) {
