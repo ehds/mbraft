@@ -37,8 +37,8 @@
 #include "braft/snapshot_executor.h"
 #include "braft/sync_point.h"
 #include "braft/util.h"
-#include "butil/logging.h"
 #include "butil/endpoint.h"
+#include "butil/logging.h"
 
 namespace braft {
 
