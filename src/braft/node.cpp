@@ -25,7 +25,6 @@
 
 #include <optional>
 
-#include "_deps/brpc/src/src/butil/endpoint.h"
 #include "braft/builtin_service_impl.h"
 #include "braft/configuration.h"
 #include "braft/errno.pb.h"
@@ -39,6 +38,7 @@
 #include "braft/sync_point.h"
 #include "braft/util.h"
 #include "butil/logging.h"
+#include "butil/endpoint.h"
 
 namespace braft {
 

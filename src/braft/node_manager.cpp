@@ -16,7 +16,6 @@
 
 #include "braft/node_manager.h"
 
-#include "_deps/brpc/src/src/butil/details/extended_endpoint.hpp"
 #include "braft/builtin_service_impl.h"
 #include "braft/cli_service.h"
 #include "braft/file_service.h"
