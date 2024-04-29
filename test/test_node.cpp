@@ -61,6 +61,7 @@ protected:
         }
         LOG(INFO) << "Start unitests: " << GetParam();
         ::system("rm -rf data");
+        ::system("mkdir data");
         ASSERT_EQ(0, braft::g_num_nodes.get_value());
     }
     void TearDown() {
