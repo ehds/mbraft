@@ -390,7 +390,7 @@ public:
 
     // return true if there is a leader, false when reach timeout.
     void wait_leader(int64_t timeout_ms = 100 * 1000 /*100 seconds*/) {
-        int64_t deadline = butil::timespec_to_microseconds(
+        int64_t deadline = butil::timespec_to_milliseconds(
             butil::milliseconds_from_now(timeout_ms));
 
         while (butil::gettimeofday_ms() < deadline) {
