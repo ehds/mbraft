@@ -7,13 +7,16 @@ Brief introduction of examples:
 # Build steps
 
 ```shell
-example=counter|atomic|block
-cd $example && cmake . && make
+cmake -B build -DWITH_EXAMPLES=ON -GNinja
+ninja -C build all
 ```
 
 # Run Server
 
 ```sh
+# example = atomic/block/server.
+export example=atomic
+cd build/example/${example}/
 bash run_server.sh
 ```
 
@@ -30,3 +33,8 @@ bash run_client.sh
 * If server_num of run_server.sh has been changed, specify run_client to make it consistent.
 * Add `--log_each_request` if you want detailed information of each request.
 
+# Stop 
+
+```sh
+bash stop.sh
+```

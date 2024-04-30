@@ -17,7 +17,7 @@
 # source shflags from current directory
 mydir="${BASH_SOURCE%/*}"
 if [[ ! -d "$mydir" ]]; then mydir="$PWD"; fi
-. $mydir/../shflags
+. $mydir/shflags
 
 
 # define command-line flags
