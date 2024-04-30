@@ -12,8 +12,16 @@ option(WITH_DEBUG_SYMBOLS "With debug symbols" ON)
 # https://cmake.org/cmake/help/latest/policy/CMP0058.html
 # suppress this  CMP0058 warning
 cmake_policy(SET CMP0058 OLD)
+
+option(WITH_EXAMPLES "Whether to build examples" OFF)
 option(WITH_TESTS "Whether to build unit tests" OFF)
 option(WITH_COVERAGE "Whether build with coverage report" OFF)
+
+set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
+
+include(FindThreads)
+include(FindProtobuf)
+include(thirdparty/brpc/SetupBrpc)
 
 set(WITH_GLOG_VAL "0")
 if(BRPC_WITH_GLOG)
@@ -24,11 +32,13 @@ if(WITH_DEBUG_SYMBOLS)
     set(DEBUG_SYMBOL "-g")
 endif()
 
-set(CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/cmake)
-
-include(FindThreads)
-include(FindProtobuf)
-include(thirdparty/brpc/SetupBrpc)
+if (WITH_COVERAGE)
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+        link_libraries(gcov)
+    else()
+        set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} --coverage")
+    endif()
+endif()
 
 if ((NOT BRPC_INCLUDE_PATH) OR (NOT BRPC_LIB))
     message(FATAL_ERROR "Fail to find brpc")
@@ -233,7 +243,12 @@ add_subdirectory(src)
 if(WITH_TESTS)
     add_subdirectory(test)
 endif()
-# add_subdirectory(tools)
+
+if(WITH_EXAMPLES)
+    add_subdirectory(example)
+endif()
+
+add_subdirectory(tools)
 
 file(COPY ${CMAKE_CURRENT_BINARY_DIR}/braft/
         DESTINATION ${CMAKE_CURRENT_BINARY_DIR}/output/include/braft/
