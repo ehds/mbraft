@@ -27,7 +27,7 @@ RepeatedTimerTask::RepeatedTimerTask()
       _running(false),
       _destroyed(true),
       _invoking(false),
-      _finish_event(0) {}
+      _finish_cv(&_mutex) {}
 
 RepeatedTimerTask::~RepeatedTimerTask() {
     CHECK(!_running) << "Is still running";
@@ -72,7 +72,7 @@ void RepeatedTimerTask::on_timedout() {
             lck.unlock();
             on_destroy();
         }
-        _finish_event.signal();
+        _finish_cv.Signal();
         return;
     }
     return schedule(lck);
@@ -96,7 +96,6 @@ void RepeatedTimerTask::start() {
     // is still running, in which case on_timedout would invoke
     // schedule as it would not see _stopped
     _running = true;
-    _finish_event.reset(1);
     schedule(lck);
 }
 
@@ -179,8 +178,10 @@ void RepeatedTimerTask::destroy(bool wait_infight_task) {
         return;
     }
 
-    if (wait_infight_task) {
-        _finish_event.wait();
+    // `rc` == 1 means timer still running.
+    // if `wait_infight_task` is true, we should wait until task is finished.
+    if (rc == 1 && wait_infight_task) {
+        _finish_cv.Wait();
         CHECK(!_running);
         return;
     }

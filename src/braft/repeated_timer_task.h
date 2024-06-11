@@ -15,13 +15,13 @@
 // Authors: Zhangyi Chen(chenzhangyi01@baidu.com)
 //          Ma,Jingwei(majingwei@baidu.com)
 
-#ifndef BRAFT_REPEATED_TIMER_TASK_H
-#define BRAFT_REPEATED_TIMER_TASK_H
+#pragma once
 
 #include <bthread/unstable.h>
 
 #include "braft/macros.h"
 #include "bthread/countdown_event.h"
+#include "butil/synchronization/condition_variable.h"
 
 namespace braft {
 
@@ -79,9 +79,7 @@ class RepeatedTimerTask {
     bool _running;
     bool _destroyed;
     bool _invoking;
-    bthread::CountdownEvent _finish_event;
+    butil::ConditionVariable _finish_cv;
 };
 
 }  //  namespace braft
-
-#endif  // BRAFT_REPEATED_TIMER_TASK_H

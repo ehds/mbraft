@@ -63,7 +63,11 @@ void ConfigurationManager::set_snapshot(ConfigurationEntry&& entry) {
 
 void ConfigurationManager::get(int64_t last_included_index,
                                ConfigurationEntry* conf) {
-    if (_configurations.empty()) {
+    if (_configurations.empty() ||
+        _configurations.begin()->id.index > last_included_index) {
+        // configurations is empty or
+        // the smallest index configuration entry is greater than
+        // last_included_index.
         CHECK_GE(last_included_index, _snapshot.id.index);
         *conf = _snapshot;
         return;
@@ -80,8 +84,9 @@ void ConfigurationManager::get(int64_t last_included_index,
             return rhs.id.index > index;
         });
 
-    CHECK(it != _configurations.rend());
+    CHECK(it != _configurations.rend());  // must found.
     *conf = *it;
+    return;
 }
 
 const ConfigurationEntry& ConfigurationManager::last_configuration() const {

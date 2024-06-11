@@ -73,6 +73,8 @@ class ConfigurationManager {
 
     void set_snapshot(ConfigurationEntry&& snapshot);
 
+    // find the latest ConfigurationEntry which `last_included_index`
+    // log belongs to.
     void get(int64_t last_included_index, ConfigurationEntry* entry);
 
     const ConfigurationEntry& last_configuration() const;
