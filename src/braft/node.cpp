@@ -2196,17 +2196,24 @@ int NodeImpl::handle_pre_vote_request(const RequestVoteRequest* request,
             break;
         }
 
-        // get last_log_id outof node mutex
+        // get last_log_id and leader_in_lease outof node mutex
         lck.unlock();
         LogId last_log_id = _log_manager->last_log_id(true);
+        bool leader_in_lease = is_leader_lease_valid();
         lck.lock();
+
         // pre_vote not need ABA check after unlock&lock
-        int64_t votable_time = _follower_lease.votable_time_from_now();
         bool grantable = (LogId(request->last_log_index(),
                                 request->last_log_term()) >= last_log_id);
         if (grantable) {
-            granted = (votable_time == 0);
-            rejected_by_lease = (votable_time > 0);
+            if (_state == STATE_LEADER) {
+                rejected_by_lease = leader_in_lease;
+            } else {
+                int64_t votable_time = _follower_lease.votable_time_from_now();
+                rejected_by_lease = (votable_time > 0);
+            }
+            // set granted to true if it is grantable and not rejected by lease.
+            granted = !rejected_by_lease;
         }
 
         LOG(INFO) << "node " << _group_id << ":" << _server_id
@@ -2273,7 +2280,7 @@ int NodeImpl::handle_request_vote_request(const RequestVoteRequest* request,
             break;
         }
 
-        // get last_log_id outof node mutex
+        // get last_log_id and leader lease outof node mutex
         lck.unlock();
         LogId last_log_id = _log_manager->last_log_id(true);
         lck.lock();
